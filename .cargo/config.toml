@@ -1,0 +1,7 @@
+[build]
+# Enable CPU-specific optimizations
+# For Apple Silicon (M1), this will enable NEON SIMD instructions
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]

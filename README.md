@@ -1,0 +1,223 @@
+# VectorDB - High-Performance Vector Database
+
+A simplified implementation of turbopuffer's architecture for learning systems programming and vector search.
+
+## 🚀 Quick Start
+
+```bash
+# Build the project
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run the CLI tool
+cargo run --release -- test --dim 1024 --num 10000
+
+# Run benchmarks
+cargo bench
+```
+
+## 📊 Current Status
+
+### ✅ Implemented
+- **Scalar distance functions**: L2, dot product, cosine similarity
+- **Parallel batch distance computation** using Rayon
+- **Benchmarking infrastructure** with Criterion
+- **CLI tool** for testing and experimentation
+- **Comprehensive test suite**
+
+### 🚧 To Be Implemented
+1. **SIMD Optimizations**
+   - NEON intrinsics for Apple Silicon (M1/M2/M3)
+   - Expected 4-8x speedup over scalar
+   
+2. **Indexing Structures**
+   - Flat/brute-force index (baseline)
+   - K-means clustered index
+   - Hierarchical clustering
+   
+3. **Clustering Algorithms**
+   - K-means implementation
+   - K-means++ initialization
+   
+4. **Storage Backends**
+   - In-memory storage
+   - Memory-mapped files (for disk-backed vectors)
+   - Compression/quantization
+
+5. **Advanced Features**
+   - Binary quantization (RaBitQ)
+   - Product quantization
+   - Multi-tier memory hierarchy
+
+## 🏗️ Project Structure
+
+```
+vectordb/
+├── src/
+│   ├── lib.rs              # Library root
+│   ├── main.rs             # CLI entry point
+│   ├── distance/           # Distance calculation implementations
+│   │   ├── mod.rs
+│   │   └── scalar.rs       # Baseline scalar implementation
+│   ├── index/              # Index structures (TODO)
+│   ├── clustering/         # Clustering algorithms (TODO)
+│   └── storage/            # Storage backends (TODO)
+├── benches/
+│   └── distance_bench.rs   # Performance benchmarks
+├── tests/
+│   └── integration_tests.rs
+├── Cargo.toml
+└── .cargo/
+    └── config.toml         # Build configuration for native CPU optimizations
+```
+
+## 🧪 Current Performance (M1 MacBook Pro)
+
+### Scalar Baseline
+- **Dot Product (1024-dim)**: ~847ns per operation, ~9 GB/s throughput
+- **Batch Processing (10k vectors, 1024-dim)**: ~5.2M distances/sec with parallelization
+
+### Expected with NEON SIMD
+- **Target**: 4-8x improvement (TBD)
+- **Estimated**: 40-72 GB/s throughput
+
+## 💡 Usage Examples
+
+### Basic Distance Computation
+
+```rust
+use vectordb::{distance, DistanceMetric};
+
+let a = vec![1.0, 2.0, 3.0];
+let b = vec![4.0, 5.0, 6.0];
+
+// Compute L2 distance
+let l2_dist = distance(&a, &b, DistanceMetric::L2);
+
+// Compute cosine distance
+let cos_dist = distance(&a, &b, DistanceMetric::Cosine);
+
+// Compute dot product
+let dot_dist = distance(&a, &b, DistanceMetric::DotProduct);
+```
+
+### Batch Distance Computation
+
+```rust
+use vectordb::{batch_distances_parallel, DistanceMetric};
+
+let query = vec![1.0, 0.0, 0.0];
+let vectors = vec![
+    vec![1.0, 0.0, 0.0],
+    vec![0.0, 1.0, 0.0],
+    vec![0.0, 0.0, 1.0],
+];
+
+// Compute distances in parallel
+let results = batch_distances_parallel(&query, &vectors, DistanceMetric::L2);
+
+// results: Vec<(usize, f32)> - (index, distance) pairs
+```
+
+## 🔬 Running Benchmarks
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark
+cargo bench -- dot_product
+
+# Run L2 distance benchmarks
+cargo bench -- l2_squared
+
+# Run batch processing benchmarks
+cargo bench -- batch_distances
+
+# Generate comparison report
+cargo bench -- --save-baseline main
+# ... make changes ...
+cargo bench -- --baseline main
+```
+
+Benchmark reports are generated in `target/criterion/` with HTML visualizations.
+
+## 🛠️ Development
+
+### Building for Release
+
+```bash
+# Full optimizations
+cargo build --release
+
+# Check build without optimizations
+cargo check
+```
+
+### Running Tests
+
+```bash
+# All tests
+cargo test
+
+# Specific test
+cargo test test_l2_squared
+
+# With output
+cargo test -- --nocapture
+```
+
+### Adding SIMD Support
+
+The project is configured to use native CPU features. For Apple Silicon (M1), this enables NEON SIMD instructions automatically when you implement them.
+
+To add NEON optimizations:
+
+1. Create `src/distance/simd_neon.rs`
+2. Use `#[cfg(target_arch = "aarch64")]` and ARM NEON intrinsics
+3. Add runtime detection with `std::arch::is_aarch64_feature_detected!()`
+4. Update `src/distance/mod.rs` to dispatch to NEON implementations
+
+## 📚 Learning Resources
+
+- [Getting Started Guide](../../thinking/vectordb-getting-started.md)
+- [Project Ideas](../../thinking/Turbopuffer%20project%20idea.md)
+- [Turbopuffer Architecture](https://turbopuffer.com/) (inspiration)
+- [ARM NEON Intrinsics Guide](https://developer.arm.com/architectures/instruction-sets/intrinsics/)
+
+## 🎯 Next Steps
+
+Follow the getting-started guide for a week-by-week plan:
+
+### Week 1 Goals
+- ✅ Project setup and structure
+- ✅ Scalar distance functions
+- ✅ Benchmarking infrastructure
+- 🎯 Add NEON SIMD optimizations
+- 🎯 Implement flat (brute-force) index
+
+### Week 2 Goals
+- K-means clustering implementation
+- Clustered index structure
+- Performance comparison with flat index
+
+## 📝 Notes for M1 Mac
+
+- **No AVX2/AVX512**: Apple Silicon uses ARM NEON instead
+- **NEON vs AVX2**: NEON has 128-bit registers (4 floats), AVX2 has 256-bit (8 floats)
+- **Performance**: M1's unified memory architecture is excellent for memory-bound operations
+- **Tools**: Use Instruments for profiling instead of Linux perf
+
+## 🤝 Contributing
+
+This is a learning project! Feel free to experiment with:
+- Different SIMD implementations
+- Alternative clustering algorithms
+- Novel quantization schemes
+- Performance optimizations
+
+## 📄 License
+
+MIT

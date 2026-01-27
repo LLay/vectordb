@@ -1,93 +1,16 @@
 //! ARM NEON SIMD-optimized distance functions.
 //! 
 //! NEON provides 128-bit registers, allowing us to process 4 f32s at once.
-//! Available on all Apple Silicon (M1/M2/M3) and modern ARM processors.
+//! Available on all Apple Silicon (M1/M2/M3).
 
-#[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
 
-/// L2 squared distance using NEON
+/// Dot product using NEON with 4x loop unrolling
 /// 
-/// Processes 4 floats per iteration using 128-bit registers.
-/// Falls back to scalar for the remainder.
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-pub unsafe fn l2_squared_neon(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
-    
-    let n = a.len();
-    let mut i = 0;
-    
-    // Accumulator for 4 partial sums
-    let mut sum = vdupq_n_f32(0.0);
-    
-    // Process 4 elements at a time
-    while i + 4 <= n {
-        // Load 4 floats from each vector
-        let va = vld1q_f32(a.as_ptr().add(i));
-        let vb = vld1q_f32(b.as_ptr().add(i));
-        
-        // Compute difference
-        let diff = vsubq_f32(va, vb);
-        
-        // Square and accumulate using FMA: sum = sum + diff * diff
-        sum = vfmaq_f32(sum, diff, diff);
-        
-        i += 4;
-    }
-    
-    // Horizontal sum of the 4 partial sums
-    let mut result = vaddvq_f32(sum);
-    
-    // Handle remainder with scalar code
-    while i < n {
-        let diff = a[i] - b[i];
-        result += diff * diff;
-        i += 1;
-    }
-    
-    result
-}
-
-/// Dot product using NEON
-#[cfg(target_arch = "aarch64")]
+/// Uses 4 independent accumulators to hide FMA latency (4 cycles on M1).
+/// Processes 16 floats per iteration.
 #[target_feature(enable = "neon")]
 pub unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
-    
-    let n = a.len();
-    let mut i = 0;
-    
-    let mut sum = vdupq_n_f32(0.0);
-    
-    // Process 4 elements at a time
-    while i + 4 <= n {
-        let va = vld1q_f32(a.as_ptr().add(i));
-        let vb = vld1q_f32(b.as_ptr().add(i));
-        
-        // FMA: sum = sum + va * vb
-        sum = vfmaq_f32(sum, va, vb);
-        
-        i += 4;
-    }
-    
-    // Horizontal sum
-    let mut result = vaddvq_f32(sum);
-    
-    // Remainder
-    while i < n {
-        result += a[i] * b[i];
-        i += 1;
-    }
-    
-    result
-}
-
-/// Optimized version that processes 16 elements per iteration
-/// Uses 4 accumulators to hide FMA latency
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-pub unsafe fn dot_product_neon_unrolled(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
     
     let n = a.len();
@@ -146,10 +69,12 @@ pub unsafe fn dot_product_neon_unrolled(a: &[f32], b: &[f32]) -> f32 {
     result
 }
 
-/// Optimized L2 with loop unrolling
-#[cfg(target_arch = "aarch64")]
+/// L2 squared distance using NEON with 4x loop unrolling
+/// 
+/// Uses 4 independent accumulators to hide FMA latency.
+/// Processes 16 floats per iteration.
 #[target_feature(enable = "neon")]
-pub unsafe fn l2_squared_neon_unrolled(a: &[f32], b: &[f32]) -> f32 {
+pub unsafe fn l2_squared_neon(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
     
     let n = a.len();
@@ -214,32 +139,14 @@ pub unsafe fn l2_squared_neon_unrolled(a: &[f32], b: &[f32]) -> f32 {
     result
 }
 
-// Safe wrappers that check for CPU support at runtime
-// (On Apple Silicon, NEON is always available, but we keep the check for portability)
-
+/// Safe wrapper for L2 squared distance
 pub fn l2_squared(a: &[f32], b: &[f32]) -> f32 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        // NEON is always available on aarch64, but we use is_aarch64_feature_detected
-        // for consistency. On M1, this will always be true.
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { l2_squared_neon_unrolled(a, b) };
-        }
-    }
-    
-    // Fallback to scalar (shouldn't happen on M1)
-    crate::distance::scalar::l2_squared_scalar(a, b)
+    unsafe { l2_squared_neon(a, b) }
 }
 
+/// Safe wrapper for dot product
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { dot_product_neon_unrolled(a, b) };
-        }
-    }
-    
-    crate::distance::scalar::dot_product_scalar(a, b)
+    unsafe { dot_product_neon(a, b) }
 }
 
 #[cfg(test)]

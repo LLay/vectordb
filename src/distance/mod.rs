@@ -1,11 +1,9 @@
 //! Distance calculation implementations
 //! 
-//! This module provides multiple implementations of vector distance functions,
-//! from simple scalar baselines to highly optimized SIMD versions.
+//! This module provides NEON SIMD-optimized vector distance functions
+//! for Apple Silicon (M1/M2/M3).
 
 pub mod scalar;
-
-#[cfg(target_arch = "aarch64")]
 pub mod simd_neon;
 
 /// Distance metric types
@@ -21,42 +19,17 @@ pub enum DistanceMetric {
 
 /// Compute distance between two vectors using the specified metric
 /// 
-/// Automatically dispatches to the fastest available implementation.
+/// Uses NEON SIMD optimizations.
 #[inline]
 pub fn distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> f32 {
     match metric {
-        DistanceMetric::L2 => {
-            #[cfg(target_arch = "aarch64")]
-            {
-                return simd_neon::l2_squared(a, b);
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                scalar::l2_squared_scalar(a, b)
-            }
-        }
-        DistanceMetric::DotProduct => {
-            #[cfg(target_arch = "aarch64")]
-            {
-                return -simd_neon::dot_product(a, b); // Negate so smaller = more similar
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                -scalar::dot_product_scalar(a, b)
-            }
-        }
+        DistanceMetric::L2 => simd_neon::l2_squared(a, b),
+        DistanceMetric::DotProduct => -simd_neon::dot_product(a, b), // Negate so smaller = more similar
         DistanceMetric::Cosine => {
-            #[cfg(target_arch = "aarch64")]
-            {
-                let dot = simd_neon::dot_product(a, b);
-                let norm_a = simd_neon::dot_product(a, a).sqrt();
-                let norm_b = simd_neon::dot_product(b, b).sqrt();
-                return 1.0 - (dot / (norm_a * norm_b));
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                scalar::cosine_distance_scalar(a, b)
-            }
+            let dot = simd_neon::dot_product(a, b);
+            let norm_a = simd_neon::dot_product(a, a).sqrt();
+            let norm_b = simd_neon::dot_product(b, b).sqrt();
+            1.0 - (dot / (norm_a * norm_b))
         }
     }
 }

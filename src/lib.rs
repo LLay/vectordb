@@ -6,9 +6,11 @@
 pub mod distance;
 pub mod index;
 pub mod clustering;
+pub mod quantization;
 pub mod storage;
 
 // Re-export commonly used types
 pub use distance::{DistanceMetric, distance, batch_distances, batch_distances_parallel};
-pub use index::ClusteredIndex;
+pub use index::{ClusteredIndex, QuantizedClusteredIndex};
 pub use clustering::{KMeans, ClusterAssignment};
+pub use quantization::{BinaryQuantizer, BinaryVector};

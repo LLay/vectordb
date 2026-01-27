@@ -50,6 +50,37 @@ enum Commands {
         #[arg(short, long, default_value_t = 1)]
         probes: usize,
     },
+    
+    /// Benchmark quantized clustered index
+    BenchQuantized {
+        /// Dimension of vectors
+        #[arg(short, long, default_value_t = 1024)]
+        dim: usize,
+        
+        /// Number of vectors
+        #[arg(short, long, default_value_t = 10000)]
+        num: usize,
+        
+        /// Number of clusters
+        #[arg(short, long, default_value_t = 100)]
+        clusters: usize,
+        
+        /// Number of queries
+        #[arg(short = 'q', long, default_value_t = 100)]
+        queries: usize,
+        
+        /// K nearest neighbors
+        #[arg(short, long, default_value_t = 10)]
+        k: usize,
+        
+        /// Number of probes
+        #[arg(short, long, default_value_t = 1)]
+        probes: usize,
+        
+        /// Rerank factor (rerank k*factor candidates)
+        #[arg(short, long, default_value_t = 3)]
+        rerank: usize,
+    },
 }
 
 fn main() {
@@ -64,6 +95,9 @@ fn main() {
         }
         Commands::Bench { dim, num, clusters, queries, k, probes } => {
             bench_clustered_index(dim, num, clusters, queries, k, probes);
+        }
+        Commands::BenchQuantized { dim, num, clusters, queries, k, probes, rerank } => {
+            bench_quantized_index(dim, num, clusters, queries, k, probes, rerank);
         }
     }
 }
@@ -156,4 +190,66 @@ fn bench_clustered_index(
     println!("  Query time: {:?}", duration);
     println!("  Avg latency: {:.2} ms", avg_latency * 1000.0);
     println!("  Throughput: {:.2} QPS", qps);
+}
+
+fn bench_quantized_index(
+    dim: usize,
+    num: usize,
+    num_clusters: usize,
+    num_queries: usize,
+    k: usize,
+    probes: usize,
+    rerank_factor: usize,
+) {
+    use rand::Rng;
+    use vectordb::QuantizedClusteredIndex;
+    use vectordb::DistanceMetric;
+    use std::time::Instant;
+
+    println!("=== Quantized Clustered Index Benchmark ===");
+    println!(
+        "Vectors: {}, Dimension: {}, Clusters: {}, Queries: {}, K: {}, Probes: {}, Rerank: {}x\n",
+        num, dim, num_clusters, num_queries, k, probes, rerank_factor
+    );
+
+    // Generate random vectors
+    println!("Generating vectors...");
+    let mut rng = rand::thread_rng();
+    let vectors: Vec<Vec<f32>> = (0..num)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+        .collect();
+
+    // Build index
+    println!("Building quantized index...");
+    let build_start = Instant::now();
+    let index = QuantizedClusteredIndex::build(vectors, num_clusters, DistanceMetric::L2, 20);
+    let build_time = build_start.elapsed();
+    println!("Index built in {:?}\n", build_time);
+
+    // Generate queries
+    let queries: Vec<Vec<f32>> = (0..num_queries)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+        .collect();
+
+    // Warm-up
+    let _ = index.search(&queries[0], k, probes, rerank_factor);
+
+    // Benchmark
+    println!("Running queries...");
+    let start = Instant::now();
+    
+    for query in &queries {
+        let _ = index.search(query, k, probes, rerank_factor);
+    }
+    
+    let duration = start.elapsed();
+    let avg_latency = duration.as_secs_f64() / num_queries as f64;
+    let qps = num_queries as f64 / duration.as_secs_f64();
+
+    println!("\nResults:");
+    println!("  Build time: {:?}", build_time);
+    println!("  Query time: {:?}", duration);
+    println!("  Avg latency: {:.2} ms", avg_latency * 1000.0);
+    println!("  Throughput: {:.2} QPS", qps);
+    println!("\nCompression: {}x (f32 → binary)", 32);
 }

@@ -1,6 +1,8 @@
-# VectorDB - High-Performance Vector Database
+# CuddleDB - High-Performance Local Vector Database
 
-A simplified implementation of turbopuffer's architecture for learning systems programming and vector search.
+A side project to see if I achive 100ms p99 query latency over 100 billion vectors. 
+
+Inspired by turbopuffer's [approximate nearest neighbor](https://turbopuffer.com/blog/ann-v3) architecture.
 
 ## 🚀 Quick Start
 
@@ -26,30 +28,24 @@ cargo bench
 - **Benchmarking infrastructure** with Criterion
 - **CLI tool** for testing and experimentation
 - **Comprehensive test suite**
+- **SIMD Optimizations** Using NEON for Apple Silicon (M1/M2/M3)
+- **K-means clustered index**
+- **Binary quantization** (with automatic thresholding) to reduce vector size
 
 ### 🚧 To Be Implemented
-1. **SIMD Optimizations**
-   - NEON intrinsics for Apple Silicon (M1/M2/M3)
-   - Expected 4-8x speedup over scalar
-   
-2. **Indexing Structures**
-   - Flat/brute-force index (baseline)
-   - K-means clustered index
-   - Hierarchical clustering
-   
-3. **Clustering Algorithms**
-   - K-means implementation
-   - K-means++ initialization
-   
-4. **Storage Backends**
-   - In-memory storage
-   - Memory-mapped files (for disk-backed vectors)
-   - Compression/quantization
-
-5. **Advanced Features**
-   - Binary quantization (RaBitQ)
-   - Product quantization
-   - Multi-tier memory hierarchy
+- **Hierarchical clustering**
+- **Learned clustering** dynamically choosing cluster count, k-means iterations, and quantization thresholds
+- **RaBitQ** implementation for binary quantization
+- **Dimensionality reduction** before quantization
+- **Quantization error bounds** for reranking
+- **Learned rerank_factor** dynamically choosing rerank_factor based on query and cluster statistics
+- **Product quantization**
+- **Memory-mapped storage**
+- **Compression/quantization**
+- **Memory-mapped files** (for disk-backed vectors)
+- **Support vector insertion and deletion** Index updates
+- **Document arithmetic intensity** https://modal.com/gpu-glossary/perf/arithmetic-intensity
+- **Document system design** 
 
 ## 🏗️ Project Structure
 

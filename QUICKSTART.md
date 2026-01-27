@@ -175,28 +175,6 @@ cargo rustc --release -- --print cfg | grep -i neon
 cargo build --release --verbose
 ```
 
-## 🎓 Learning Path
-
-1. **Week 1**: Understand scalar implementations
-   - Read `src/distance/scalar.rs`
-   - Run benchmarks, understand performance
-   - Try modifying algorithms
-
-2. **Week 2**: Add NEON SIMD
-   - Study ARM NEON intrinsics
-   - Implement dot product with NEON
-   - Measure speedup
-
-3. **Week 3**: Build index structures
-   - Implement flat index
-   - Add k-means clustering
-   - Compare performance
-
-4. **Week 4+**: Advanced topics
-   - Binary quantization
-   - Memory-mapped storage
-   - Multi-level caching
-
 ## 🔗 Helpful Links
 
 - [Rust std::arch docs](https://doc.rust-lang.org/core/arch/index.html)

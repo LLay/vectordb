@@ -1,9 +1,7 @@
 //! Index implementations for vector search
 //! 
-//! Provides k-means clustered indices with optional binary quantization.
+//! Provides hierarchical clustered index with binary quantization.
 
-pub mod clustered;
-pub mod quantized;
+pub mod hierarchical;
 
-pub use clustered::ClusteredIndex;
-pub use quantized::QuantizedClusteredIndex;
+pub use hierarchical::ClusteredIndex;

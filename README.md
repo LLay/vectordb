@@ -13,11 +13,14 @@ cargo build --release
 # Run tests
 cargo test
 
-# Run the CLI tool
-cargo run --release -- test --dim 1024 --num 10000
+# Run the demo
+cargo run --release --example hierarchical_demo
 
-# Run benchmarks
-cargo bench
+# Benchmark the index
+cargo run --release -- bench --num 10000 --branching 10
+
+# Run SIMD benchmarks
+cargo bench --bench distance_bench
 ```
 
 ## 📊 Current Status
@@ -68,16 +71,6 @@ vectordb/
 └── .cargo/
     └── config.toml         # Build configuration for native CPU optimizations
 ```
-
-## 🧪 Current Performance (M1 MacBook Pro)
-
-### Scalar Baseline
-- **Dot Product (1024-dim)**: ~847ns per operation, ~9 GB/s throughput
-- **Batch Processing (10k vectors, 1024-dim)**: ~5.2M distances/sec with parallelization
-
-### Expected with NEON SIMD
-- **Target**: 4-8x improvement (TBD)
-- **Estimated**: 40-72 GB/s throughput
 
 ## 💡 Usage Examples
 
@@ -183,36 +176,6 @@ To add NEON optimizations:
 - [Turbopuffer Architecture](https://turbopuffer.com/) (inspiration)
 - [ARM NEON Intrinsics Guide](https://developer.arm.com/architectures/instruction-sets/intrinsics/)
 
-## 🎯 Next Steps
-
-Follow the getting-started guide for a week-by-week plan:
-
-### Week 1 Goals
-- ✅ Project setup and structure
-- ✅ Scalar distance functions
-- ✅ Benchmarking infrastructure
-- 🎯 Add NEON SIMD optimizations
-- 🎯 Implement flat (brute-force) index
-
-### Week 2 Goals
-- K-means clustering implementation
-- Clustered index structure
-- Performance comparison with flat index
-
-## 📝 Notes for M1 Mac
-
-- **No AVX2/AVX512**: Apple Silicon uses ARM NEON instead
-- **NEON vs AVX2**: NEON has 128-bit registers (4 floats), AVX2 has 256-bit (8 floats)
-- **Performance**: M1's unified memory architecture is excellent for memory-bound operations
-- **Tools**: Use Instruments for profiling instead of Linux perf
-
-## 🤝 Contributing
-
-This is a learning project! Feel free to experiment with:
-- Different SIMD implementations
-- Alternative clustering algorithms
-- Novel quantization schemes
-- Performance optimizations
 
 ## 📄 License
 

@@ -1,8 +1,8 @@
 //! Clustering algorithms for building vector indices
 //! 
-//! This module will contain implementations of:
-//! - K-means clustering
-//! - K-means++ initialization
-//! - Hierarchical clustering (future)
+//! Provides implementations of:
+//! - K-means clustering with k-means++ initialization
 
-// TODO: Implement clustering algorithms
+pub mod kmeans;
+
+pub use kmeans::{KMeans, ClusterAssignment};

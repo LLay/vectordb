@@ -13,7 +13,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run a simple test
+    /// Test distance computation
     Test {
         /// Dimension of vectors
         #[arg(short, long, default_value_t = 128)]
@@ -22,6 +22,33 @@ enum Commands {
         /// Number of vectors
         #[arg(short, long, default_value_t = 1000)]
         num: usize,
+    },
+    
+    /// Benchmark clustered index
+    Bench {
+        /// Dimension of vectors
+        #[arg(short, long, default_value_t = 1024)]
+        dim: usize,
+        
+        /// Number of vectors
+        #[arg(short, long, default_value_t = 10000)]
+        num: usize,
+        
+        /// Number of clusters
+        #[arg(short, long, default_value_t = 100)]
+        clusters: usize,
+        
+        /// Number of queries
+        #[arg(short = 'q', long, default_value_t = 100)]
+        queries: usize,
+        
+        /// K nearest neighbors
+        #[arg(short, long, default_value_t = 10)]
+        k: usize,
+        
+        /// Number of probes
+        #[arg(short, long, default_value_t = 1)]
+        probes: usize,
     },
 }
 
@@ -34,6 +61,9 @@ fn main() {
     match cli.command {
         Commands::Test { dim, num } => {
             run_test(dim, num);
+        }
+        Commands::Bench { dim, num, clusters, queries, k, probes } => {
+            bench_clustered_index(dim, num, clusters, queries, k, probes);
         }
     }
 }
@@ -66,4 +96,64 @@ fn run_test(dim: usize, num: usize) {
     for (i, (idx, dist)) in results.iter().take(5).enumerate() {
         println!("  {}. Vector {} (distance: {:.4})", i + 1, idx, dist);
     }
+}
+
+fn bench_clustered_index(
+    dim: usize,
+    num: usize,
+    num_clusters: usize,
+    num_queries: usize,
+    k: usize,
+    probes: usize,
+) {
+    use rand::Rng;
+    use vectordb::index::ClusteredIndex;
+    use vectordb::DistanceMetric;
+    use std::time::Instant;
+
+    println!("=== Clustered Index Benchmark ===");
+    println!(
+        "Vectors: {}, Dimension: {}, Clusters: {}, Queries: {}, K: {}, Probes: {}\n",
+        num, dim, num_clusters, num_queries, k, probes
+    );
+
+    // Generate random vectors
+    println!("Generating vectors...");
+    let mut rng = rand::thread_rng();
+    let vectors: Vec<Vec<f32>> = (0..num)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+        .collect();
+
+    // Build index
+    println!("Building clustered index...");
+    let build_start = Instant::now();
+    let index = ClusteredIndex::build(vectors, num_clusters, DistanceMetric::L2, 20);
+    let build_time = build_start.elapsed();
+    println!("Index built in {:?}\n", build_time);
+
+    // Generate queries
+    let queries: Vec<Vec<f32>> = (0..num_queries)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+        .collect();
+
+    // Warm-up
+    let _ = index.search_parallel(&queries[0], k, probes);
+
+    // Benchmark
+    println!("Running queries...");
+    let start = Instant::now();
+    
+    for query in &queries {
+        let _ = index.search_parallel(query, k, probes);
+    }
+    
+    let duration = start.elapsed();
+    let avg_latency = duration.as_secs_f64() / num_queries as f64;
+    let qps = num_queries as f64 / duration.as_secs_f64();
+
+    println!("\nResults:");
+    println!("  Build time: {:?}", build_time);
+    println!("  Query time: {:?}", duration);
+    println!("  Avg latency: {:.2} ms", avg_latency * 1000.0);
+    println!("  Throughput: {:.2} QPS", qps);
 }

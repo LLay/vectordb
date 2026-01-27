@@ -10,3 +10,5 @@ pub mod storage;
 
 // Re-export commonly used types
 pub use distance::{DistanceMetric, distance, batch_distances, batch_distances_parallel};
+pub use index::ClusteredIndex;
+pub use clustering::{KMeans, ClusterAssignment};

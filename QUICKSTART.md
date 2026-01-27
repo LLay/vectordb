@@ -106,40 +106,6 @@ fn bench_new_distance(c: &mut Criterion) {
 criterion_group!(benches, /* existing */, bench_new_distance);
 ```
 
-### Adding SIMD Implementation
-
-1. Create `src/distance/simd_neon.rs`:
-```rust
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
-
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-pub unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
-    // NEON implementation
-}
-```
-
-2. Add to `src/distance/mod.rs`:
-```rust
-#[cfg(target_arch = "aarch64")]
-pub mod simd_neon;
-```
-
-3. Test against scalar:
-```rust
-#[test]
-fn test_neon_matches_scalar() {
-    let a: Vec<f32> = (0..1024).map(|i| i as f32).collect();
-    let b: Vec<f32> = (0..1024).map(|i| i as f32 * 2.0).collect();
-    
-    let scalar_result = scalar::dot_product_scalar(&a, &b);
-    let neon_result = simd_neon::dot_product(&a, &b);
-    
-    assert!((scalar_result - neon_result).abs() / scalar_result < 1e-5);
-}
-```
-
 ## 📊 Performance Targets
 
 ### Current (Scalar Only)

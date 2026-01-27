@@ -1,8 +1,7 @@
 //! Index implementations for vector search
 //! 
-//! This module will contain various indexing strategies:
-//! - Flat/brute-force search (baseline)
-//! - K-means clustered index
-//! - Hierarchical clustering (future)
+//! Provides k-means clustered index for fast similarity search.
 
-// TODO: Implement index structures
+pub mod clustered;
+
+pub use clustered::ClusteredIndex;

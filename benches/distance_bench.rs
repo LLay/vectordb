@@ -2,6 +2,9 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Benchmark
 use rand::Rng;
 use vectordb::distance::scalar;
 
+#[cfg(target_arch = "aarch64")]
+use vectordb::distance::simd_neon;
+
 fn generate_random_vectors(dim: usize) -> (Vec<f32>, Vec<f32>) {
     let mut rng = rand::thread_rng();
     let a: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -20,6 +23,19 @@ fn bench_dot_product(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("scalar", dim), dim, |bencher, _| {
             bencher.iter(|| scalar::dot_product_scalar(black_box(&a), black_box(&b)))
         });
+        
+        #[cfg(target_arch = "aarch64")]
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), dim, |bencher, _| {
+                bencher.iter(|| simd_neon::dot_product(black_box(&a), black_box(&b)))
+            });
+            
+            group.bench_with_input(BenchmarkId::new("neon_unrolled", dim), dim, |bencher, _| {
+                bencher.iter(|| unsafe { 
+                    simd_neon::dot_product_neon_unrolled(black_box(&a), black_box(&b)) 
+                })
+            });
+        }
     }
     
     group.finish();
@@ -36,6 +52,19 @@ fn bench_l2_distance(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("scalar", dim), dim, |bencher, _| {
             bencher.iter(|| scalar::l2_squared_scalar(black_box(&a), black_box(&b)))
         });
+        
+        #[cfg(target_arch = "aarch64")]
+        {
+            group.bench_with_input(BenchmarkId::new("neon", dim), dim, |bencher, _| {
+                bencher.iter(|| simd_neon::l2_squared(black_box(&a), black_box(&b)))
+            });
+            
+            group.bench_with_input(BenchmarkId::new("neon_unrolled", dim), dim, |bencher, _| {
+                bencher.iter(|| unsafe { 
+                    simd_neon::l2_squared_neon_unrolled(black_box(&a), black_box(&b)) 
+                })
+            });
+        }
     }
     
     group.finish();

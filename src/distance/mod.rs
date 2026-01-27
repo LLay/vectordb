@@ -5,8 +5,8 @@
 
 pub mod scalar;
 
-// TODO: Add SIMD implementations for Apple Silicon (NEON)
-// pub mod simd_neon;
+#[cfg(target_arch = "aarch64")]
+pub mod simd_neon;
 
 /// Distance metric types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,9 +25,39 @@ pub enum DistanceMetric {
 #[inline]
 pub fn distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> f32 {
     match metric {
-        DistanceMetric::L2 => scalar::l2_squared_scalar(a, b),
-        DistanceMetric::DotProduct => -scalar::dot_product_scalar(a, b), // Negate so smaller = more similar
-        DistanceMetric::Cosine => scalar::cosine_distance_scalar(a, b),
+        DistanceMetric::L2 => {
+            #[cfg(target_arch = "aarch64")]
+            {
+                return simd_neon::l2_squared(a, b);
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                scalar::l2_squared_scalar(a, b)
+            }
+        }
+        DistanceMetric::DotProduct => {
+            #[cfg(target_arch = "aarch64")]
+            {
+                return -simd_neon::dot_product(a, b); // Negate so smaller = more similar
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                -scalar::dot_product_scalar(a, b)
+            }
+        }
+        DistanceMetric::Cosine => {
+            #[cfg(target_arch = "aarch64")]
+            {
+                let dot = simd_neon::dot_product(a, b);
+                let norm_a = simd_neon::dot_product(a, a).sqrt();
+                let norm_b = simd_neon::dot_product(b, b).sqrt();
+                return 1.0 - (dot / (norm_a * norm_b));
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                scalar::cosine_distance_scalar(a, b)
+            }
+        }
     }
 }
 

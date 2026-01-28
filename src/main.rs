@@ -23,41 +23,6 @@ enum Commands {
         #[arg(short, long, default_value_t = 1000)]
         num: usize,
     },
-    
-    /// Benchmark hierarchical clustered index
-    Bench {
-        /// Dimension of vectors
-        #[arg(short, long, default_value_t = 1024)]
-        dim: usize,
-        
-        /// Number of vectors
-        #[arg(short, long, default_value_t = 10000)]
-        num: usize,
-        
-        /// Branching factor (clusters per level)
-        #[arg(short, long, default_value_t = 10)]
-        branching: usize,
-        
-        /// Maximum leaf size (vectors per leaf)
-        #[arg(short = 'l', long, default_value_t = 150)]
-        max_leaf: usize,
-        
-        /// Number of queries
-        #[arg(short = 'q', long, default_value_t = 100)]
-        queries: usize,
-        
-        /// K nearest neighbors
-        #[arg(short, long, default_value_t = 10)]
-        k: usize,
-        
-        /// Number of probes per level
-        #[arg(short, long, default_value_t = 2)]
-        probes: usize,
-        
-        /// Rerank factor (rerank k*factor candidates)
-        #[arg(short, long, default_value_t = 3)]
-        rerank: usize,
-    },
 }
 
 fn main() {
@@ -69,9 +34,6 @@ fn main() {
     match cli.command {
         Commands::Test { dim, num } => {
             run_test(dim, num);
-        }
-        Commands::Bench { dim, num, branching, max_leaf, queries, k, probes, rerank } => {
-            bench_hierarchical_index(dim, num, branching, max_leaf, queries, k, probes, rerank);
         }
     }
 }
@@ -104,69 +66,4 @@ fn run_test(dim: usize, num: usize) {
     for (i, (idx, dist)) in results.iter().take(5).enumerate() {
         println!("  {}. Vector {} (distance: {:.4})", i + 1, idx, dist);
     }
-}
-
-fn bench_hierarchical_index(
-    dim: usize,
-    num: usize,
-    branching_factor: usize,
-    max_leaf_size: usize,
-    num_queries: usize,
-    k: usize,
-    probes_per_level: usize,
-    rerank_factor: usize,
-) {
-    use rand::Rng;
-    use vectordb::ClusteredIndex;
-    use vectordb::DistanceMetric;
-    use std::time::Instant;
-
-    println!("=== Adaptive Hierarchical Index Benchmark ===");
-    println!(
-        "Vectors: {}, Dimension: {}, Branching: {}, Max Leaf: {}, Queries: {}, K: {}, Probes/Level: {}, Rerank: {}x\n",
-        num, dim, branching_factor, max_leaf_size, num_queries, k, probes_per_level, rerank_factor
-    );
-
-    // Generate random vectors
-    println!("Generating vectors...");
-    let mut rng = rand::thread_rng();
-    let vectors: Vec<Vec<f32>> = (0..num)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
-        .collect();
-
-    // Build index
-    println!("Building adaptive hierarchical index...");
-    let build_start = Instant::now();
-    let index = ClusteredIndex::build(vectors, branching_factor, max_leaf_size, DistanceMetric::L2, 20);
-    let build_time = build_start.elapsed();
-    println!("Index built in {:?}", build_time);
-    println!("  Max depth: {}", index.max_depth());
-    println!("  Nodes: {}\n", index.num_nodes());
-
-    // Generate queries
-    let queries: Vec<Vec<f32>> = (0..num_queries)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
-        .collect();
-
-    // Warm-up
-    let _ = index.search(&queries[0], k, probes_per_level, rerank_factor);
-
-    // Benchmark
-    println!("Running queries...");
-    let start = Instant::now();
-    
-    for query in &queries {
-        let _ = index.search(query, k, probes_per_level, rerank_factor);
-    }
-    
-    let duration = start.elapsed();
-    let avg_latency = duration.as_secs_f64() / num_queries as f64;
-    let qps = num_queries as f64 / duration.as_secs_f64();
-
-    println!("\nResults:");
-    println!("  Build time: {:?}", build_time);
-    println!("  Query time: {:?}", duration);
-    println!("  Avg latency: {:.2} ms", avg_latency * 1000.0);
-    println!("  Throughput: {:.2} QPS", qps);
-    println!("\nCompression: {}x (f32 → binary)", 32);
 }

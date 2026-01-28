@@ -48,3 +48,19 @@ debug = true  # For profiling
 [[bench]]
 name = "distance_bench"
 harness = false
+
+[[bench]]
+name = "quantization_bench"
+harness = false
+
+[[bench]]
+name = "clustering_bench"
+harness = false
+
+[[bench]]
+name = "index_bench"
+harness = false
+
+[[bench]]
+name = "e2e_bench"
+harness = false

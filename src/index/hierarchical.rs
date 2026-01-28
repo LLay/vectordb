@@ -10,6 +10,8 @@
 use crate::clustering::KMeans;
 use crate::distance::{distance, DistanceMetric};
 use crate::quantization::{BinaryQuantizer, BinaryVector, hamming_distance};
+use crate::storage::MmapVectorStore;
+use std::path::Path;
 
 /// A node in the hierarchical tree
 #[derive(Debug, Clone)]
@@ -28,6 +30,37 @@ struct ClusterNode {
     vector_indices: Vec<usize>,
 }
 
+/// Storage backend for full precision vectors
+enum VectorStorage {
+    /// In-memory storage (fast, but uses more RAM)
+    InMemory(Vec<Vec<f32>>),
+    /// Memory-mapped storage (slower cold reads, but saves RAM)
+    Mmap(MmapVectorStore),
+}
+
+impl VectorStorage {
+    #[inline]
+    fn get(&self, idx: usize) -> &[f32] {
+        match self {
+            VectorStorage::InMemory(vectors) => &vectors[idx],
+            VectorStorage::Mmap(store) => store.get(idx),
+        }
+    }
+    
+    #[allow(dead_code)]
+    fn len(&self) -> usize {
+        match self {
+            VectorStorage::InMemory(vectors) => vectors.len(),
+            VectorStorage::Mmap(store) => store.len(),
+        }
+    }
+    
+    #[allow(dead_code)]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// Hierarchical clustered index with binary quantization
 pub struct ClusteredIndex {
     /// All nodes in the tree (indexed by node ID)
@@ -39,7 +72,7 @@ pub struct ClusteredIndex {
     /// Pre-quantized binary vectors (for fast candidate scanning)
     binary_vectors: Vec<BinaryVector>,
     /// Lookup table: original_index → full precision vector
-    full_vectors: Vec<Vec<f32>>,
+    full_vectors: VectorStorage,
     /// Distance metric
     metric: DistanceMetric,
     /// Dimensionality
@@ -87,8 +120,8 @@ impl ClusteredIndex {
         println!("  Quantization complete: {} bytes per vector", 
                  binary_vectors[0].bits.len() * 8);
 
-        // Store full vectors for reranking
-        let full_vectors = vectors.clone();
+        // Store full vectors for reranking (in-memory by default)
+        let full_vectors = VectorStorage::InMemory(vectors.clone());
 
         // Build tree recursively with adaptive splitting
         let mut nodes = Vec::new();
@@ -139,7 +172,70 @@ impl ClusteredIndex {
             max_leaf_size,
         }
     }
-
+    
+    /// Convert index to use memory-mapped storage
+    /// 
+    /// This saves RAM by storing full precision vectors on disk
+    /// instead of in memory. The OS will cache hot vectors automatically.
+    /// 
+    /// # Arguments
+    /// * `vector_file_path` - Where to store the vectors on disk
+    pub fn use_mmap_storage<P: AsRef<Path>>(&mut self, vector_file_path: P) -> std::io::Result<()> {
+        // Extract vectors from current storage
+        let vectors = match &self.full_vectors {
+            VectorStorage::InMemory(vecs) => vecs.clone(),
+            VectorStorage::Mmap(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "Already using mmap storage",
+                ));
+            }
+        };
+        
+        println!("Converting to memory-mapped storage...");
+        println!("  Writing {} vectors to disk...", vectors.len());
+        
+        // Create memory-mapped store
+        let mmap_store = MmapVectorStore::create(vector_file_path, &vectors)?;
+        
+        let size_mb = mmap_store.size_bytes() as f64 / 1_048_576.0;
+        println!("  File size: {:.2} MB", size_mb);
+        
+        // Replace storage
+        self.full_vectors = VectorStorage::Mmap(mmap_store);
+        
+        println!("  Conversion complete!");
+        
+        Ok(())
+    }
+    
+    /// Check if index is using memory-mapped storage
+    pub fn is_using_mmap(&self) -> bool {
+        matches!(self.full_vectors, VectorStorage::Mmap(_))
+    }
+    
+    /// Get memory usage estimate in bytes
+    pub fn memory_usage_bytes(&self) -> usize {
+        let mut total = 0;
+        
+        // Nodes (rough estimate)
+        total += std::mem::size_of::<ClusterNode>() * self.nodes.len();
+        
+        // Binary vectors
+        total += self.binary_vectors.iter()
+            .map(|bv| bv.bits.len() * 8)
+            .sum::<usize>();
+        
+        // Full vectors (only if in-memory)
+        if let VectorStorage::InMemory(vectors) = &self.full_vectors {
+            total += vectors.iter()
+                .map(|v| v.len() * 4)
+                .sum::<usize>();
+        }
+        
+        total
+    }
+    
     /// Recursively build tree levels with adaptive splitting
     #[allow(clippy::too_many_arguments)]
     fn build_recursive(
@@ -371,7 +467,7 @@ impl ClusteredIndex {
         let mut reranked: Vec<(usize, f32)> = binary_candidates
             .par_iter()
             .map(|(original_idx, _)| {
-                let full_vec = &self.full_vectors[*original_idx];
+                let full_vec = self.full_vectors.get(*original_idx);
                 let dist = distance(query, full_vec, self.metric);
                 (*original_idx, dist)
             })
@@ -545,5 +641,76 @@ mod tests {
             let results = index.search(&query, 10, 2, 3);
             assert_eq!(results.len(), 10);
         }
+    }
+    
+    #[test]
+    fn test_mmap_storage() {
+        use std::fs;
+        
+        let vectors: Vec<Vec<f32>> = (0..1000)
+            .map(|i| vec![i as f32; 128])
+            .collect();
+        let test_file = "test_mmap_vectors.bin";
+        
+        // Build index
+        let mut index = ClusteredIndex::build(
+            vectors.clone(),
+            10,
+            100,
+            DistanceMetric::L2,
+            20,
+        );
+        
+        // Get memory usage before mmap
+        let mem_before = index.memory_usage_bytes();
+        assert!(!index.is_using_mmap());
+        
+        // Convert to mmap
+        index.use_mmap_storage(test_file).unwrap();
+        assert!(index.is_using_mmap());
+        
+        // Memory usage should be lower
+        let mem_after = index.memory_usage_bytes();
+        assert!(mem_after < mem_before);
+        
+        // Query should still work
+        let query = vectors[0].clone();
+        let results = index.search(&query, 10, 4, 5);
+        assert_eq!(results.len(), 10);
+        
+        // First result should be the query itself
+        assert_eq!(results[0].0, 0);
+        assert!(results[0].1 < 0.001); // Near-zero distance
+        
+        // Cleanup
+        fs::remove_file(test_file).ok();
+    }
+    
+    #[test]
+    fn test_mmap_storage_twice_fails() {
+        use std::fs;
+        
+        let vectors: Vec<Vec<f32>> = (0..100)
+            .map(|i| vec![i as f32; 32])
+            .collect();
+        let test_file = "test_mmap_twice.bin";
+        
+        let mut index = ClusteredIndex::build(
+            vectors.clone(),
+            5,
+            50,
+            DistanceMetric::L2,
+            10,
+        );
+        
+        // First conversion should succeed
+        assert!(index.use_mmap_storage(test_file).is_ok());
+        
+        // Second conversion should fail
+        let result = index.use_mmap_storage("test_mmap_twice_2.bin");
+        assert!(result.is_err());
+        
+        // Cleanup
+        fs::remove_file(test_file).ok();
     }
 }

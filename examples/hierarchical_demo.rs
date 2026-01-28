@@ -29,32 +29,45 @@ fn main() {
     
     for branching in [5, 10, 20] {
         let build_start = Instant::now();
+        let vector_file = format!("hier_demo_branch_{}.bin", branching);
         let index = ClusteredIndex::build(
             vectors.clone(),
+            &vector_file,
             branching,
             max_leaf_size,
             DistanceMetric::L2,
-            20,
-        );
+            10,
+        ).expect("Failed to build index");
         let build_time = build_start.elapsed();
         
         println!("\nBranching factor {}:", branching);
         println!("  Build time: {:?}", build_time);
         println!("  Max depth: {}", index.max_depth());
         println!("  Total nodes: {}", index.num_nodes());
+        
+        // Quick search test
+        let query = &queries[0];
+        let results = index.search(query, k, 2, 3);
+        let avg_dist = results.iter().map(|(_, d)| d).sum::<f32>() / results.len() as f32;
+        println!("  Avg distance: {:.2}", avg_dist);
+        println!();
+        
+        std::fs::remove_file(&vector_file).ok();
     }
 
     // Build final index for benchmarking
     println!("\n--- Performance Benchmark ---");
     let branching = 10;
     let build_start = Instant::now();
+    let vector_file = "hier_demo_main.bin";
     let index = ClusteredIndex::build(
         vectors,
+        vector_file,
         branching,
         max_leaf_size,
         DistanceMetric::L2,
         20,
-    );
+    ).expect("Failed to build index");
     let build_time = build_start.elapsed();
     
     println!("Built index in {:?}", build_time);
@@ -130,4 +143,12 @@ fn main() {
     println!("     * Flat search: 10,000 comparisons");
     println!("     * Hierarchical: ~{}  comparisons", branching * index.max_depth() * 2);
     println!("     * Speedup: ~{}x", 10000 / (branching * index.max_depth() * 2).max(1));
+    
+    println!("\n=== Summary ===");
+    println!("The hierarchical index provides:");
+    println!("  - Fast search through tree-based pruning");
+    println!("  - Tunable accuracy/speed tradeoff (probes parameter)");
+    println!("  - Scalability to large datasets");
+    
+    std::fs::remove_file(vector_file).ok();
 }

@@ -62,13 +62,15 @@ fn test_scale(num_vectors: usize, dim: usize) {
     let max_iters = 20;
     
     let build_start = Instant::now();
+    let vector_file = "scale_demo_vectors.bin";
     let index = ClusteredIndex::build(
         vectors.clone(),
+        vector_file,
         branching,
         max_leaf,
         DistanceMetric::L2,
         max_iters,
-    );
+    ).expect("Failed to build index");
     let build_time = build_start.elapsed();
     
     println!("  Build time: {:.2}s", build_time.as_secs_f64());

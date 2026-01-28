@@ -58,11 +58,12 @@ fn bench_query_profile_1m(c: &mut Criterion) {
     
     let index = ClusteredIndex::build(
         vectors,
+        "bench_profile_1m.bin",
         10,  // branching
         150, // max_leaf
         DistanceMetric::L2,
         20,  // max_iters
-    );
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -111,17 +112,19 @@ fn bench_query_profile_varying_size(c: &mut Criterion) {
         let vectors = generate_random_vectors(*num_vectors, dim);
         
         let build_start = Instant::now();
+        let vector_file = format!("bench_varying_{}.bin", num_vectors);
         let index = ClusteredIndex::build(
             vectors,
+            &vector_file,
             10,
             150,
             DistanceMetric::L2,
             20,
-        );
+        ).expect("Failed to build index");
         let build_time = build_start.elapsed().as_secs_f64();
         
         println!("Build time: {:.2}s, depth={}, nodes={}", 
-                 build_time, index.max_depth(), index.num_nodes());
+            build_time, index.max_depth(), index.num_nodes());
         
         let mut rng = rand::thread_rng();
         let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -140,6 +143,9 @@ fn bench_query_profile_varying_size(c: &mut Criterion) {
         let profile = profile_query_phases(&index, &query, k, probes, rerank, 100);
         println!("Query latency: {:.3} ms", profile.total_ms);
         println!("Candidates: {}", profile.num_candidates);
+        
+        // Cleanup
+        std::fs::remove_file(&vector_file).ok();
     }
     
     group.finish();
@@ -161,13 +167,15 @@ fn bench_tree_depth_impact(c: &mut Criterion) {
         println!("\nBranching factor: {}", branching);
         let vectors = generate_random_vectors(num_vectors, dim);
         
+        let vector_file = format!("bench_depth_{}.bin", branching);
         let index = ClusteredIndex::build(
             vectors,
+            &vector_file,
             *branching,
             150,
             DistanceMetric::L2,
             20,
-        );
+        ).expect("Failed to build index");
         
         println!("Tree depth: {}, nodes: {}", index.max_depth(), index.num_nodes());
         
@@ -186,6 +194,9 @@ fn bench_tree_depth_impact(c: &mut Criterion) {
         
         let profile = profile_query_phases(&index, &query, k, probes, rerank, 100);
         println!("Query latency: {:.3} ms", profile.total_ms);
+        
+        // Cleanup
+        std::fs::remove_file(&vector_file).ok();
     }
     
     group.finish();
@@ -203,7 +214,14 @@ fn bench_cache_simulation(c: &mut Criterion) {
     
     println!("\n=== Simulating Cache Effects ===");
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, 10, 150, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(
+        vectors,
+        "bench_cache.bin",
+        10,
+        150,
+        DistanceMetric::L2,
+        20
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     
@@ -228,6 +246,9 @@ fn bench_cache_simulation(c: &mut Criterion) {
     println!("      'random_queries' shows cold cache performance");
     
     group.finish();
+    
+    // Cleanup
+    std::fs::remove_file("bench_cache.bin").ok();
 }
 
 fn bench_parallelism_potential(c: &mut Criterion) {
@@ -237,7 +258,14 @@ fn bench_parallelism_potential(c: &mut Criterion) {
     let dim = 1024;
     let num_vectors = 100_000;
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, 10, 150, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(
+        vectors,
+        "bench_parallel.bin",
+        10,
+        150,
+        DistanceMetric::L2,
+        20
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     let queries: Vec<Vec<f32>> = (0..100)
@@ -268,6 +296,9 @@ fn bench_parallelism_potential(c: &mut Criterion) {
     println!("Note: Implement batch_search_parallel to see parallel speedup");
     
     group.finish();
+    
+    // Cleanup
+    std::fs::remove_file("bench_param_sweep.bin").ok();
 }
 
 criterion_group!(

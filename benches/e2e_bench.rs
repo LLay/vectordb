@@ -33,6 +33,7 @@ fn bench_e2e_full_pipeline(c: &mut Criterion) {
             // Build index
             let index = ClusteredIndex::build(
                 black_box(vectors.clone()),
+                "bench_e2e_full_pipeline.bin",
                 branching,
                 max_leaf,
                 DistanceMetric::L2,
@@ -40,7 +41,7 @@ fn bench_e2e_full_pipeline(c: &mut Criterion) {
             );
             
             // Search
-            index.search(black_box(&query), k, probes, rerank)
+            index.unwrap().search(black_box(&query), k, probes, rerank)
         })
     });
     
@@ -161,7 +162,15 @@ fn bench_e2e_batch_queries(c: &mut Criterion) {
     let rerank = 3;
     
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, branching, max_leaf, DistanceMetric::L2, 20);
+    let vector_file = "bench_e2e_batch_queries.bin";
+    let index = ClusteredIndex::build(
+        vectors.clone(),
+        &vector_file,
+        branching,
+        max_leaf,
+        DistanceMetric::L2,
+        20,
+    ).expect("Failed to build index");
     
     for num_queries in [10, 100, 1_000].iter() {
         let queries = generate_random_vectors(*num_queries, dim);

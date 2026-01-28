@@ -28,8 +28,10 @@ fn bench_index_build(c: &mut Criterion) {
             num_vectors,
             |bencher, _| {
                 bencher.iter(|| {
+                    let vector_file = format!("bench_index_build_{}.bin", num_vectors);
                     ClusteredIndex::build(
                         black_box(vectors.clone()),
+                        &vector_file,
                         branching,
                         max_leaf,
                         DistanceMetric::L2,
@@ -54,7 +56,14 @@ fn bench_index_search_varying_k(c: &mut Criterion) {
     let rerank = 3;
     
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, branching, max_leaf, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(
+        vectors,
+        "bench_index_search_varying_k.bin",
+        branching,
+        max_leaf,
+        DistanceMetric::L2,
+        20,
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -83,7 +92,14 @@ fn bench_index_search_varying_probes(c: &mut Criterion) {
     let rerank = 3;
     
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, branching, max_leaf, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(
+        vectors,
+        "bench_index_search_varying_probes.bin",
+        branching,
+        max_leaf,
+        DistanceMetric::L2,
+        20,
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -110,7 +126,14 @@ fn bench_index_search_varying_rerank(c: &mut Criterion) {
     let probes = 2;
     
     let vectors = generate_random_vectors(num_vectors, dim);
-    let index = ClusteredIndex::build(vectors, branching, max_leaf, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(
+        vectors,
+        "bench_index_search_varying_rerank.bin",
+        branching,
+        max_leaf,
+        DistanceMetric::L2,
+        20,
+    ).expect("Failed to build index");
     
     let mut rng = rand::thread_rng();
     let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
@@ -144,11 +167,12 @@ fn bench_index_search_dimensions(c: &mut Criterion) {
         let vectors = generate_random_vectors(num_vectors, *dim);
         let index = ClusteredIndex::build(
             vectors,
+            "bench_index_search_dimensions.bin",
             branching,
             max_leaf,
             DistanceMetric::L2,
             20,
-        );
+        ).expect("Failed to build index");
         
         let mut rng = rand::thread_rng();
         let query: Vec<f32> = (0..*dim).map(|_| rng.gen_range(-1.0..1.0)).collect();

@@ -57,7 +57,9 @@ fn main() {
     println!("Building index...");
     let vectors = generate_vectors(num_vectors, dim);
     let build_start = Instant::now();
-    let index = ClusteredIndex::build(vectors, 10, 150, DistanceMetric::L2, 20);
+    let vector_file = "profile_vectors.bin";
+    let index = ClusteredIndex::build(vectors, vector_file, 10, 150, DistanceMetric::L2, 20)
+        .expect("Failed to build index");
     let build_time = build_start.elapsed();
     
     println!("Index built in {:.2}s", build_time.as_secs_f64());

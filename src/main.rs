@@ -38,6 +38,10 @@ enum Commands {
         #[arg(short, long, default_value_t = 10)]
         branching: usize,
         
+        /// Maximum leaf size (vectors per leaf)
+        #[arg(short = 'l', long, default_value_t = 150)]
+        max_leaf: usize,
+        
         /// Number of queries
         #[arg(short = 'q', long, default_value_t = 100)]
         queries: usize,
@@ -66,8 +70,8 @@ fn main() {
         Commands::Test { dim, num } => {
             run_test(dim, num);
         }
-        Commands::Bench { dim, num, branching, queries, k, probes, rerank } => {
-            bench_hierarchical_index(dim, num, branching, queries, k, probes, rerank);
+        Commands::Bench { dim, num, branching, max_leaf, queries, k, probes, rerank } => {
+            bench_hierarchical_index(dim, num, branching, max_leaf, queries, k, probes, rerank);
         }
     }
 }
@@ -106,6 +110,7 @@ fn bench_hierarchical_index(
     dim: usize,
     num: usize,
     branching_factor: usize,
+    max_leaf_size: usize,
     num_queries: usize,
     k: usize,
     probes_per_level: usize,
@@ -116,10 +121,10 @@ fn bench_hierarchical_index(
     use vectordb::DistanceMetric;
     use std::time::Instant;
 
-    println!("=== Hierarchical Clustered Index Benchmark ===");
+    println!("=== Adaptive Hierarchical Index Benchmark ===");
     println!(
-        "Vectors: {}, Dimension: {}, Branching: {}, Queries: {}, K: {}, Probes/Level: {}, Rerank: {}x\n",
-        num, dim, branching_factor, num_queries, k, probes_per_level, rerank_factor
+        "Vectors: {}, Dimension: {}, Branching: {}, Max Leaf: {}, Queries: {}, K: {}, Probes/Level: {}, Rerank: {}x\n",
+        num, dim, branching_factor, max_leaf_size, num_queries, k, probes_per_level, rerank_factor
     );
 
     // Generate random vectors
@@ -130,12 +135,12 @@ fn bench_hierarchical_index(
         .collect();
 
     // Build index
-    println!("Building hierarchical index...");
+    println!("Building adaptive hierarchical index...");
     let build_start = Instant::now();
-    let index = ClusteredIndex::build(vectors, branching_factor, DistanceMetric::L2, 20);
+    let index = ClusteredIndex::build(vectors, branching_factor, max_leaf_size, DistanceMetric::L2, 20);
     let build_time = build_start.elapsed();
     println!("Index built in {:?}", build_time);
-    println!("  Levels: {}", index.num_levels());
+    println!("  Max depth: {}", index.max_depth());
     println!("  Nodes: {}\n", index.num_nodes());
 
     // Generate queries

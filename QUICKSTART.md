@@ -20,6 +20,11 @@ cargo run -- test --help          # Show CLI help
 cargo run --release -- test       # Run with default settings
 cargo run --release -- test --dim 2048 --num 50000  # Custom test
 
+# Hierarchical Index
+cargo run --example hierarchical_demo                              # Run demo
+cargo run --release -- bench                                       # Bench with defaults
+cargo run --release -- bench --dim 1024 --num 10000 --branching 10 --max-leaf 150
+
 # Profiling (macOS)
 cargo build --release
 xcrun xctrace record --template "Time Profiler" --launch ./target/release/vectordb
@@ -64,6 +69,49 @@ cargo bench -- l2_squared     # Benchmark your changes
 ```bash
 cargo build --release
 # Use Instruments on macOS
+```
+
+## 🌳 Hierarchical Index
+
+### Key Parameters
+
+- **`branching_factor`** (typical: 10-20): Clusters per level
+  - Higher = fewer levels, but more comparisons per level
+  - Lower = more levels, but fewer comparisons per level
+  
+- **`max_leaf_size`** (typical: 100-200): Max vectors per leaf node
+  - Smaller = deeper tree, more precise search
+  - Larger = shallower tree, faster build, larger leaves
+  - **Adaptive**: Dense clusters split deeper automatically
+  
+- **`probes_per_level`** (typical: 2-5): Clusters to explore at each level
+  - Higher = better recall, slower search
+  - Lower = faster search, may miss results
+  
+- **`rerank_factor`** (typical: 3-5): Multiplier for reranking candidates
+  - Returns k results, but reranks k×rerank candidates
+  - Higher = better accuracy, slightly slower
+
+### Example: Building an Index
+
+```rust
+use vectordb::{ClusteredIndex, DistanceMetric};
+
+let index = ClusteredIndex::build(
+    vectors,           // Vec<Vec<f32>>
+    10,                // branching_factor
+    150,               // max_leaf_size (adaptive splitting)
+    DistanceMetric::L2,
+    20,                // k-means iterations
+);
+
+// Search
+let results = index.search(
+    &query,            // &[f32]
+    10,                // k (return top 10)
+    2,                 // probes_per_level
+    3,                 // rerank_factor (rerank top 30, return 10)
+);
 ```
 
 ## 🔧 Common Tasks

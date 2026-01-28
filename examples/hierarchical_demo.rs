@@ -24,13 +24,15 @@ fn main() {
         .collect();
 
     // Build hierarchical index with different branching factors
-    println!("\n--- Building Hierarchical Indices ---");
+    println!("\n--- Building Adaptive Hierarchical Indices ---");
+    let max_leaf_size = 150;
     
     for branching in [5, 10, 20] {
         let build_start = Instant::now();
         let index = ClusteredIndex::build(
             vectors.clone(),
             branching,
+            max_leaf_size,
             DistanceMetric::L2,
             20,
         );
@@ -38,12 +40,8 @@ fn main() {
         
         println!("\nBranching factor {}:", branching);
         println!("  Build time: {:?}", build_time);
-        println!("  Levels: {}", index.num_levels());
+        println!("  Max depth: {}", index.max_depth());
         println!("  Total nodes: {}", index.num_nodes());
-        
-        // Show tree structure
-        let avg_nodes_per_level = index.num_nodes() as f64 / index.num_levels() as f64;
-        println!("  Avg nodes/level: {:.1}", avg_nodes_per_level);
     }
 
     // Build final index for benchmarking
@@ -53,13 +51,14 @@ fn main() {
     let index = ClusteredIndex::build(
         vectors,
         branching,
+        max_leaf_size,
         DistanceMetric::L2,
         20,
     );
     let build_time = build_start.elapsed();
     
     println!("Built index in {:?}", build_time);
-    println!("Tree: {} levels, {} nodes", index.num_levels(), index.num_nodes());
+    println!("Tree: max depth {}, {} nodes", index.max_depth(), index.num_nodes());
 
     // Show example query
     println!("\n--- Example Query ---");
@@ -107,16 +106,18 @@ fn main() {
     }
 
     // Show key insights
-    println!("\n--- How Hierarchical Clustering Works ---");
-    println!("1. Tree Structure:");
+    println!("\n--- How Adaptive Hierarchical Clustering Works ---");
+    println!("1. Adaptive Tree Structure:");
     println!("   - Root level: ~{} clusters", branching);
-    println!("   - Each level splits into {} sub-clusters", branching);
-    println!("   - Total levels: {}", index.num_levels());
-    println!("   - Leaf level contains actual vectors");
+    println!("   - Each cluster splits into {} sub-clusters", branching);
+    println!("   - Max depth: {}", index.max_depth());
+    println!("   - Splits continue until leaf size ≤ {}", max_leaf_size);
+    println!("   - Handles non-uniform data distributions");
     println!("\n2. Search Process:");
     println!("   - Start at root, find {} nearest clusters", 2);
     println!("   - Traverse down tree level-by-level");
     println!("   - At each level, pick {} nearest children", 2);
+    println!("   - Continue until reaching leaf nodes");
     println!("   - At leaf level, collect binary candidates");
     println!("   - Rerank top candidates with full precision");
     println!("\n3. Binary Quantization:");
@@ -124,9 +125,9 @@ fn main() {
     println!("   - Fast Hamming distance for filtering");
     println!("   - Full precision reranking for accuracy");
     println!("\n4. Performance:");
-    println!("   - Search cost: O(branching × levels × probes)");
+    println!("   - Search cost: O(branching × depth × probes)");
     println!("   - With 10,000 vectors:");
     println!("     * Flat search: 10,000 comparisons");
-    println!("     * Hierarchical: ~{}  comparisons", branching * index.num_levels() * 2);
-    println!("     * Speedup: ~{}x", 10000 / (branching * index.num_levels() * 2));
+    println!("     * Hierarchical: ~{}  comparisons", branching * index.max_depth() * 2);
+    println!("     * Speedup: ~{}x", 10000 / (branching * index.max_depth() * 2).max(1));
 }

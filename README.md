@@ -34,9 +34,10 @@ cargo bench --bench distance_bench
 - **SIMD Optimizations** Using NEON for Apple Silicon (M1/M2/M3)
 - **K-means clustered index**
 - **Binary quantization** (with automatic thresholding) to reduce vector size
+- **Two-phase search** Fast filtering with compressed binary vectors, precise ranking with full precision vectors
+- **Hierarchical clustering** with adaptive splitting based on cluster density 
 
 ### 🚧 To Be Implemented
-- **Hierarchical clustering**
 - **Learned clustering** dynamically choosing cluster count, k-means iterations, and quantization thresholds
 - **RaBitQ** implementation for binary quantization
 - **Dimensionality reduction** before quantization
@@ -46,7 +47,7 @@ cargo bench --bench distance_bench
 - **Memory-mapped storage**
 - **Compression/quantization**
 - **Memory-mapped files** (for disk-backed vectors)
-- **Support vector insertion and deletion** Index updates
+- **Support vector insertion and deletion** Index updates. Implement [SPFresh](https://dl.acm.org/doi/10.1145/3600006.3613166) style index updates.
 - **Document arithmetic intensity** https://modal.com/gpu-glossary/perf/arithmetic-intensity
 - **Document system design** 
 

@@ -3,7 +3,6 @@
 //! This module provides NEON SIMD-optimized vector distance functions
 //! for Apple Silicon (M1/M2/M3).
 
-pub mod scalar;
 pub mod simd_neon;
 
 /// Distance metric types

@@ -45,11 +45,8 @@ cargo bench --bench distance_bench
 - **Learned rerank_factor** dynamically choosing rerank_factor based on query and cluster statistics
 - **Product quantization**
 - **Memory-mapped storage**
-- **Compression/quantization**
-- **Memory-mapped files** (for disk-backed vectors)
 - **Support vector insertion and deletion** Index updates. Implement [SPFresh](https://dl.acm.org/doi/10.1145/3600006.3613166) style index updates.
 - **Document arithmetic intensity** https://modal.com/gpu-glossary/perf/arithmetic-intensity
-- **Document system design** 
 
 ## 🏗️ Project Structure
 

@@ -86,9 +86,8 @@ Search path (probes=2):
 
 **Adaptive splitting:** Nodes continue splitting until cluster size ≤ `max_leaf_size`
 - **Handles non-uniform distributions:** Dense regions split deeper, sparse regions remain shallow
-- **No fixed depth limit:** Tree depth adapts to data density
-- **Safety valve:** Max depth of 15 prevents infinite recursion
-- **Controlled leaf size:** Ensures no leaf has > `max_leaf_size` vectors (typ. 100-200)
+- **Controlled leaf size:** Ensures no leaf has > `max_leaf_size` vectors
+- **Exception: Safety valve:** Max depth of 15 prevents infinite recursion
 
 This approach is similar to:
 - Quad-trees/Octrees - split based on spatial density

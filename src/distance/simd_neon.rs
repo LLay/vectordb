@@ -152,40 +152,47 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::distance::scalar;
     
     #[test]
-    fn test_l2_matches_scalar() {
+    fn test_l2_squared() {
         let a: Vec<f32> = (0..1024).map(|i| i as f32 * 0.1).collect();
         let b: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.1) + 0.5).collect();
         
-        let scalar_result = scalar::l2_squared_scalar(&a, &b);
-        let simd_result = l2_squared(&a, &b);
+        let result = l2_squared(&a, &b);
         
-        let relative_error = (scalar_result - simd_result).abs() / scalar_result;
+        // Manually compute expected result for verification
+        let expected: f32 = a.iter().zip(b.iter())
+            .map(|(x, y)| (x - y) * (x - y))
+            .sum();
+        
+        let relative_error = (expected - result).abs() / expected;
         assert!(
             relative_error < 1e-4,
-            "Results differ: scalar={}, simd={}, error={}",
-            scalar_result,
-            simd_result,
+            "Result incorrect: expected={}, got={}, error={}",
+            expected,
+            result,
             relative_error
         );
     }
     
     #[test]
-    fn test_dot_matches_scalar() {
+    fn test_dot_product() {
         let a: Vec<f32> = (0..1024).map(|i| i as f32 * 0.001).collect();
         let b: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.001) + 0.1).collect();
         
-        let scalar_result = scalar::dot_product_scalar(&a, &b);
-        let simd_result = dot_product(&a, &b);
+        let result = dot_product(&a, &b);
         
-        let relative_error = (scalar_result - simd_result).abs() / scalar_result.abs();
+        // Manually compute expected result
+        let expected: f32 = a.iter().zip(b.iter())
+            .map(|(x, y)| x * y)
+            .sum();
+        
+        let relative_error = (expected - result).abs() / expected.abs();
         assert!(
             relative_error < 1e-5,
-            "Results differ: scalar={}, simd={}, relative_error={}",
-            scalar_result,
-            simd_result,
+            "Result incorrect: expected={}, got={}, relative_error={}",
+            expected,
+            result,
             relative_error
         );
     }
@@ -197,21 +204,21 @@ mod tests {
             let a: Vec<f32> = (0..len).map(|i| i as f32).collect();
             let b: Vec<f32> = (0..len).map(|i| (i as f32) * 2.0).collect();
             
-            let scalar_result = scalar::dot_product_scalar(&a, &b);
-            let simd_result = dot_product(&a, &b);
+            let result = dot_product(&a, &b);
+            let expected: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
             
-            let relative_error = if scalar_result.abs() > 1e-10 {
-                (scalar_result - simd_result).abs() / scalar_result.abs()
+            let relative_error = if expected.abs() > 1e-10 {
+                (expected - result).abs() / expected.abs()
             } else {
-                (scalar_result - simd_result).abs()
+                (expected - result).abs()
             };
             
             assert!(
                 relative_error < 1e-4,
-                "Length {}: scalar={}, simd={}, error={}",
+                "Length {}: expected={}, got={}, error={}",
                 len,
-                scalar_result,
-                simd_result,
+                expected,
+                result,
                 relative_error
             );
         }

@@ -64,17 +64,18 @@ impl BinaryVector {
 
         // Process 2 u64s at a time (128 bits = 1 NEON register)
         while i + 2 <= len {
-            // Load two u64s as a 128-bit vector
+            // Load two u64s as a 128-bit vector into a dedicated 128-bit NEON register.
+            // Do this once for each of a and b
             let a = vld1q_u64(self.bits.as_ptr().add(i));
             let b = vld1q_u64(other.bits.as_ptr().add(i));
             
             // XOR to find differing bits
             let xor = veorq_u64(a, b);
             
-            // Reinterpret as u8x16 for vcnt
+            // Reinterpret as u8x16 for vcnt. No data movement - just tells the CPU to treat the bits differently
             let xor_u8 = vreinterpretq_u8_u64(xor);
             
-            // Count bits in each byte
+            // Counts the number of 1 bits in each of the 16 bytes in parallel
             let popcnt = vcntq_u8(xor_u8);
             
             // Sum all bytes (horizontal sum)
@@ -277,8 +278,8 @@ mod tests {
     fn test_large_dimension() {
         let quantizer = BinaryQuantizer::new(1024, 0.0);
         
-        let v1: Vec<f32> = (0..1024).map(|i| (i as f32 - 512.0)).collect();
-        let v2: Vec<f32> = (0..1024).map(|i| (i as f32 - 500.0)).collect();
+        let v1: Vec<f32> = (0..1024).map(|i| i as f32 - 512.0).collect();
+        let v2: Vec<f32> = (0..1024).map(|i| i as f32 - 500.0).collect();
         
         let b1 = quantizer.quantize(&v1);
         let b2 = quantizer.quantize(&v2);

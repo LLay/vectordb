@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
 use rand::Rng;
-use vectordb::distance::{scalar, simd_neon};
+use vectordb::distance::simd_neon;
 
 fn generate_random_vectors(dim: usize) -> (Vec<f32>, Vec<f32>) {
     let mut rng = rand::thread_rng();
@@ -17,10 +17,6 @@ fn bench_dot_product(c: &mut Criterion) {
         
         group.throughput(Throughput::Bytes((*dim * 4 * 2) as u64)); // 2 vectors, f32 = 4 bytes
         
-        group.bench_with_input(BenchmarkId::new("scalar", dim), dim, |bencher, _| {
-            bencher.iter(|| scalar::dot_product_scalar(black_box(&a), black_box(&b)))
-        });
-        
         group.bench_with_input(BenchmarkId::new("neon", dim), dim, |bencher, _| {
             bencher.iter(|| simd_neon::dot_product(black_box(&a), black_box(&b)))
         });
@@ -36,10 +32,6 @@ fn bench_l2_distance(c: &mut Criterion) {
         let (a, b) = generate_random_vectors(*dim);
         
         group.throughput(Throughput::Bytes((*dim * 4 * 2) as u64));
-        
-        group.bench_with_input(BenchmarkId::new("scalar", dim), dim, |bencher, _| {
-            bencher.iter(|| scalar::l2_squared_scalar(black_box(&a), black_box(&b)))
-        });
         
         group.bench_with_input(BenchmarkId::new("neon", dim), dim, |bencher, _| {
             bencher.iter(|| simd_neon::l2_squared(black_box(&a), black_box(&b)))

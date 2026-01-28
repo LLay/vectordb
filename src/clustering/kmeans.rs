@@ -99,7 +99,7 @@ impl KMeans {
         let mut kmeans = Self::init_plusplus(vectors, k, metric);
         let mut assignment = kmeans.assign(vectors);
 
-        for iteration in 0..max_iterations {
+        for _ in 0..max_iterations {
             // Update centroids
             let new_centroids = kmeans.update_centroids(vectors, &assignment);
             
@@ -116,7 +116,6 @@ impl KMeans {
             kmeans.centroids = new_centroids;
 
             if converged {
-                println!("K-means converged after {} iterations", iteration + 1);
                 break;
             }
 

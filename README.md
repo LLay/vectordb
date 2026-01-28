@@ -1,6 +1,6 @@
 # CuddleDB - High-Performance Local Vector Database
 
-A side project to see if I achive 100ms p99 query latency over 100 billion vectors. 
+A side project to see if I achieve 100ms p99 query latency over 100 billion vectors. 
 
 Inspired by turbopuffer's [approximate nearest neighbor](https://turbopuffer.com/blog/ann-v3) architecture.
 

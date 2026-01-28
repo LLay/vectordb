@@ -36,6 +36,8 @@ pub struct ClusteredIndex {
     root_ids: Vec<usize>,
     /// Binary quantizer
     quantizer: BinaryQuantizer,
+    /// Pre-quantized binary vectors (for fast candidate scanning)
+    binary_vectors: Vec<BinaryVector>,
     /// Lookup table: original_index → full precision vector
     full_vectors: Vec<Vec<f32>>,
     /// Distance metric
@@ -78,6 +80,12 @@ impl ClusteredIndex {
 
         // Create binary quantizer
         let quantizer = BinaryQuantizer::from_vectors(&vectors);
+
+        // Pre-quantize all vectors for fast candidate scanning
+        println!("  Quantizing {} vectors...", num_vectors);
+        let binary_vectors = quantizer.quantize_batch_parallel(&vectors);
+        println!("  Quantization complete: {} bytes per vector", 
+                 binary_vectors[0].bits.len() * 8);
 
         // Store full vectors for reranking
         let full_vectors = vectors.clone();
@@ -123,6 +131,7 @@ impl ClusteredIndex {
             nodes,
             root_ids,
             quantizer,
+            binary_vectors,
             full_vectors,
             metric,
             dimension,
@@ -317,7 +326,7 @@ impl ClusteredIndex {
         Vec::new()
     }
 
-    /// Search within leaf nodes
+    /// Search within leaf nodes with parallel Hamming distance computation
     fn search_leaves(
         &self,
         leaf_ids: &[usize],
@@ -326,19 +335,25 @@ impl ClusteredIndex {
         k: usize,
         rerank_factor: usize,
     ) -> Vec<(usize, f32)> {
+        use rayon::prelude::*;
+        
         let rerank_k = (k * rerank_factor).min(10000);
 
-        // Collect all binary candidates from leaves
-        let mut binary_candidates = Vec::new();
-        
+        // Collect all vector indices from leaves
+        let mut all_indices = Vec::new();
         for &leaf_id in leaf_ids {
             let leaf = &self.nodes[leaf_id];
-            for &vector_idx in &leaf.vector_indices {
-                let binary_vec = self.quantizer.quantize(&self.full_vectors[vector_idx]);
-                let hamming_dist = hamming_distance(query_binary, &binary_vec);
-                binary_candidates.push((vector_idx, hamming_dist));
-            }
+            all_indices.extend_from_slice(&leaf.vector_indices);
         }
+
+        // Parallel Hamming distance computation (using pre-quantized vectors)
+        let mut binary_candidates: Vec<(usize, u32)> = all_indices
+            .par_iter()
+            .map(|&vector_idx| {
+                let hamming_dist = hamming_distance(query_binary, &self.binary_vectors[vector_idx]);
+                (vector_idx, hamming_dist)
+            })
+            .collect();
 
         if binary_candidates.is_empty() {
             return Vec::new();
@@ -352,14 +367,15 @@ impl ClusteredIndex {
             binary_candidates.truncate(rerank_k);
         }
 
-        // Rerank with full precision
-        let mut reranked = Vec::with_capacity(rerank_k);
-        
-        for (original_idx, _) in binary_candidates {
-            let full_vec = &self.full_vectors[original_idx];
-            let dist = distance(query, full_vec, self.metric);
-            reranked.push((original_idx, dist));
-        }
+        // Rerank with full precision (parallel)
+        let mut reranked: Vec<(usize, f32)> = binary_candidates
+            .par_iter()
+            .map(|(original_idx, _)| {
+                let full_vec = &self.full_vectors[*original_idx];
+                let dist = distance(query, full_vec, self.metric);
+                (*original_idx, dist)
+            })
+            .collect();
 
         // Return final top-k
         if reranked.len() <= k {

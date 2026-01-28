@@ -343,15 +343,29 @@ impl ClusteredIndex {
                 break;
             }
 
-            // Find nearest nodes at this level
-            let mut node_distances: Vec<(usize, u32)> = current_nodes
-                .iter()
-                .map(|&node_id| {
-                    let node = &self.nodes[node_id];
-                    let dist = hamming_distance(&query_binary, &node.binary_centroid);
-                    (node_id, dist)
-                })
-                .collect();
+            // Find nearest nodes at this level (parallel if many nodes)
+            use rayon::prelude::*;
+            let mut node_distances: Vec<(usize, u32)> = if current_nodes.len() > 10 {
+                // Parallel distance computation for many nodes
+                current_nodes
+                    .par_iter()
+                    .map(|&node_id| {
+                        let node = &self.nodes[node_id];
+                        let dist = hamming_distance(&query_binary, &node.binary_centroid);
+                        (node_id, dist)
+                    })
+                    .collect()
+            } else {
+                // Sequential for few nodes (less overhead)
+                current_nodes
+                    .iter()
+                    .map(|&node_id| {
+                        let node = &self.nodes[node_id];
+                        let dist = hamming_distance(&query_binary, &node.binary_centroid);
+                        (node_id, dist)
+                    })
+                    .collect()
+            };
 
             node_distances.sort_by_key(|x| x.1);
 
@@ -379,6 +393,39 @@ impl ClusteredIndex {
         Vec::new()
     }
 
+    /// Compute Hamming distances for a set of vector indices (adaptive parallelization)
+    /// 
+    /// Returns Vec<(vector_idx, hamming_distance)> pairs.
+    /// 
+    /// Adaptive strategy:
+    /// - >100 vectors: Parallel (overhead is worth it)
+    /// - ≤100 vectors: Sequential (avoid rayon overhead ~10-50μs)
+    #[inline]
+    fn compute_hamming_distances(
+        &self,
+        vector_indices: &[usize],
+        query_binary: &BinaryVector,
+    ) -> Vec<(usize, u32)> {
+        use rayon::prelude::*;
+        
+        if vector_indices.len() > 100 {
+            // Parallel: Process vectors across multiple cores
+            // Each thread computes Hamming distance independently
+            // Rayon's work-stealing balances the load automatically
+            vector_indices
+                .par_iter()
+                .map(|&idx| (idx, hamming_distance(query_binary, &self.binary_vectors[idx])))
+                .collect()
+        } else {
+            // Sequential: Faster for small workloads
+            // Avoids parallel overhead (thread spawning, synchronization)
+            vector_indices
+                .iter()
+                .map(|&idx| (idx, hamming_distance(query_binary, &self.binary_vectors[idx])))
+                .collect()
+        }
+    }
+
     /// Search within leaf nodes with parallel Hamming distance computation
     fn search_leaves(
         &self,
@@ -392,21 +439,34 @@ impl ClusteredIndex {
         
         let rerank_k = (k * rerank_factor).min(10000);
 
-        // Collect all vector indices from leaves
-        let mut all_indices = Vec::new();
-        for &leaf_id in leaf_ids {
+        // Step 1: Collect binary candidates from leaf nodes
+        // We compute Hamming distances (fast, 32x compressed) to filter candidates
+        // before doing expensive full-precision reranking
+        let mut binary_candidates: Vec<(usize, u32)> = if leaf_ids.len() > 1 {
+            // Case A: Multiple leaves to scan
+            // Strategy: Parallelize across leaves using rayon
+            // - Each leaf is processed independently (embarrassingly parallel)
+            // - Within each leaf, compute_hamming_distances() decides whether to parallelize
+            // - Results are flattened into a single candidate list
+            leaf_ids
+                .par_iter()
+                .flat_map(|&leaf_id| {
+                    let leaf = &self.nodes[leaf_id];
+                    // Returns Vec<(vector_idx, hamming_distance)> for this leaf
+                    self.compute_hamming_distances(&leaf.vector_indices, query_binary)
+                })
+                .collect()
+        } else if let Some(&leaf_id) = leaf_ids.first() {
+            // Case B: Single leaf to scan
+            // Strategy: Let compute_hamming_distances() decide parallelization
+            // - If leaf has >100 vectors: parallelize within the leaf
+            // - If leaf has ≤100 vectors: sequential (avoid parallel overhead)
             let leaf = &self.nodes[leaf_id];
-            all_indices.extend_from_slice(&leaf.vector_indices);
-        }
-
-        // Parallel Hamming distance computation (using pre-quantized vectors)
-        let mut binary_candidates: Vec<(usize, u32)> = all_indices
-            .par_iter()
-            .map(|&vector_idx| {
-                let hamming_dist = hamming_distance(query_binary, &self.binary_vectors[vector_idx]);
-                (vector_idx, hamming_dist)
-            })
-            .collect();
+            self.compute_hamming_distances(&leaf.vector_indices, query_binary)
+        } else {
+            // Case C: No leaves (shouldn't happen, but handle gracefully)
+            Vec::new()
+        };
 
         if binary_candidates.is_empty() {
             return Vec::new();

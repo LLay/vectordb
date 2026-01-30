@@ -113,9 +113,9 @@ fn main() {
         (100, 100, "turbopuffer leaves"),
     ];
     
-    for (branching, max_leaf, name) in configs {
+    for (branching, target_leaf_size, name) in configs {
         println!("\n{}", "═".repeat(70));
-        println!("Configuration: {} (branching={}, max_leaf={})", name, branching, max_leaf);
+        println!("Configuration: {} (branching={}, target_leaf_size={})", name, branching, target_leaf_size);
         println!("{}", "═".repeat(70));
         
         // Build index with observability
@@ -123,7 +123,7 @@ fn main() {
             vectors.clone(),
             format!("obs_demo_{}.bin", name.replace(" ", "_")),
             branching,
-            max_leaf,
+            target_leaf_size,
             DistanceMetric::L2,
             10,
         ).expect("Failed to build");
@@ -137,19 +137,19 @@ fn main() {
         
         println!("\n--- Search Performance ---\n");
         
-        for probes in [2, 10, 50] {
+        for probes in [10] {
             println!("Probes = {}:", probes);
             println!("{}", "-".repeat(50));
             
             // Test with different rerank factors to show the impact
-            for rerank_factor in [3, 10, 100] {
+            for rerank_factor in [3] {
                 let (results, stats) = index.search_with_stats(query, k, probes, rerank_factor);
                 let recall = calculate_recall(&gt, &results);
                 
                 println!("  rerank_factor={}: Recall@{}={:.1}%, reranked={}, returned={}", 
                          rerank_factor, k, recall * 100.0, stats.vectors_reranked_full, results.len());
                 
-                // index.print_search_stats(&stats, probes);
+                index.print_search_stats(&stats, probes);
             }
             println!();
         }

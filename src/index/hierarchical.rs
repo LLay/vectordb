@@ -190,7 +190,7 @@ impl ClusteredIndex {
         indices: Vec<usize>,
         current_depth: usize,
         max_depth_reached: &mut usize,
-        max_leaf_size: usize,
+        target_leaf_size: usize,
         branching_factor: usize,
         metric: DistanceMetric,
         max_iterations: usize,
@@ -204,8 +204,9 @@ impl ClusteredIndex {
             return Vec::new();
         }
 
-        // Base case: Create leaf node if conditions are met
-        if Self::should_be_leaf(indices.len(), current_depth, max_leaf_size, branching_factor) {
+        // Base case: Create leaf node if we're close to target size or too deep
+        let num_vectors = indices.len();
+        if num_vectors <= target_leaf_size * 2 || current_depth >= 10 {
             let node_id = *next_node_id;
             *next_node_id += 1;
 
@@ -214,8 +215,14 @@ impl ClusteredIndex {
             return vec![node_id];
         }
 
-        // Recursive case: Cluster and split
-        let num_clusters = branching_factor.min(indices.len());
+        // Adaptive branching: Choose branching factor to target target_leaf_size per leaf
+        // If we have N vectors and want leaves of ~target_leaf_size, split into ~(N / target_leaf_size) clusters
+        let target_clusters = (num_vectors as f32 / target_leaf_size as f32).ceil() as usize;
+        let num_clusters = target_clusters
+            .max(2)  // At least 2 clusters to make progress
+            .min(branching_factor)  // Don't exceed max branching factor
+            .min(num_vectors);  // Can't have more clusters than vectors
+        
         let (kmeans, assignment) = Self::cluster_subset(
             &indices,
             all_vectors,
@@ -230,21 +237,55 @@ impl ClusteredIndex {
         // Build child nodes for each cluster
         let mut node_ids = Vec::new();
         
-        for cluster_id in 0..num_clusters {
-            let cluster_indices = Self::extract_cluster_indices(&indices, &assignment, cluster_id);
-            
-            if cluster_indices.is_empty() {
-                continue; // Skip empty clusters
+        // Collect all non-empty clusters with their indices
+        let mut clusters: Vec<(usize, Vec<usize>)> = (0..num_clusters)
+            .filter_map(|cluster_id| {
+                let cluster_indices = Self::extract_cluster_indices(&indices, &assignment, cluster_id);
+                if cluster_indices.is_empty() {
+                    None
+                } else {
+                    Some((cluster_id, cluster_indices))
+                }
+            })
+            .collect();
+        
+        // Merge small clusters (< 30% of target) into neighbors to reduce fragmentation
+        let min_cluster_size = (target_leaf_size * 3 / 10).max(10);
+        let mut i = 0;
+        while i < clusters.len() {
+            if clusters[i].1.len() < min_cluster_size && clusters.len() > 1 {
+                // Find the nearest cluster to merge with
+                let small_cluster = clusters.remove(i);
+                let small_centroid = &kmeans.centroids[small_cluster.0];
+                
+                // Find closest cluster by centroid distance
+                let (best_idx, _) = clusters
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, (cid, _))| {
+                        let dist = distance(small_centroid, &kmeans.centroids[*cid], metric);
+                        (idx, dist)
+                    })
+                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .unwrap();
+                
+                // Always merge small clusters - we'll recursively split if too large
+                clusters[best_idx].1.extend(small_cluster.1);
+            } else {
+                i += 1;
             }
-
-            // Recursively build subtree for this cluster
+        }
+        
+        // Build nodes from merged clusters
+        for (_cluster_id, cluster_indices) in clusters {
+            // Recursively build subtree - let recursion decide if it should be a leaf
             let children = Self::build_recursive(
                 all_vectors,
                 quantizer,
                 cluster_indices,
                 current_depth + 1,
                 max_depth_reached,
-                max_leaf_size,
+                target_leaf_size,
                 branching_factor,
                 metric,
                 max_iterations,
@@ -258,12 +299,13 @@ impl ClusteredIndex {
                 node_ids.push(children[0]);
             } else {
                 // Create internal node for this cluster
+                // Use the original cluster_id for centroid lookup
                 let node_id = *next_node_id;
                 *next_node_id += 1;
 
                 let node = Self::create_internal_from_cluster(
                     node_id,
-                    cluster_id,
+                    _cluster_id,
                     &binary_centroids,
                     &kmeans.centroids,
                     children,
@@ -437,24 +479,6 @@ impl ClusteredIndex {
         self.full_vectors.size_bytes()
     }
     
-    /// Check if a node should be a leaf (base case for recursion)
-    #[inline]
-    fn should_be_leaf(
-        cluster_size: usize,
-        current_depth: usize,
-        max_leaf_size: usize,
-        _branching_factor: usize,
-    ) -> bool {
-        const MAX_TREE_DEPTH: usize = 10; // Safety limit to prevent infinite recursion
-        
-        // Create a leaf if:
-        // 1. Cluster is small enough (primary condition)
-        // 2. We've reached safety depth limit (prevents infinite recursion)
-        // 
-        // Note: We DON'T check cluster_size < branching_factor because that would
-        // create tiny leaves when using large branching factors (e.g., 100)
-        cluster_size <= max_leaf_size || current_depth >= MAX_TREE_DEPTH
-    }
 
     /// Create a leaf node from a set of vector indices
     #[inline]

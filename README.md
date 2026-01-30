@@ -1,8 +1,19 @@
-# CuddleDB - High-Performance Local Vector Database
+# CuddleDB - High-Performance Vector Database
 
 A side project to see if I achieve 100ms p99 query latency over 100 billion vectors. 
 
 Inspired by turbopuffer's [approximate nearest neighbor](https://turbopuffer.com/blog/ann-v3) architecture.
+
+## Current Status
+
+540 μs p99 query latency over 1 million vectors with 100% recall on my M1 macbook pro. Full details in [benches/saved/jan_29_1M_vectors/](benches/saved/jan_29_1M_vectors/).
+
+## Next steps:
+1. Run on 10 million vectors locally. Reduce latency as much as possible.
+2. Run on 1B vectors on an r7iz.8xlarge instance. Requires updating architecture/instruction specific optimizations (e.g. NEON for Apple Silicon, AVX512 for x86_64, etc.
+3. Run on 100B vectors on AWS u-18tb1.112xlarge instance. I'm probably can't afford to actually do this.
+
+See [SCALING_GOALS.md](docs/goals/SCALING_GOALS.md) for more details.
 
 ## 🚀 Quick Start
 

@@ -1,18 +1,41 @@
 /// Fast recall benchmark for development
 /// 
-/// Uses small datasets and fewer queries for quick iteration.
+/// Uses pre-generated clustered datasets for quick iteration.
 /// Should complete in < 30 seconds.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rand::Rng;
 use vectordb::{ClusteredIndex, DistanceMetric};
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufReader, Read};
 
-fn generate_random_vectors(num: usize, dim: usize) -> Vec<Vec<f32>> {
-    let mut rng = rand::thread_rng();
-    (0..num)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
-        .collect()
+fn load_vectors(filename: &str) -> (Vec<Vec<f32>>, usize) {
+    let file = File::open(filename).expect(&format!("Failed to open {}", filename));
+    let mut reader = BufReader::new(file);
+    
+    // Read header
+    let mut header = [0u8; 8];
+    reader.read_exact(&mut header).unwrap();
+    
+    let num_vectors = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
+    let dims = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+    
+    // Read vectors
+    let mut vectors = Vec::with_capacity(num_vectors);
+    let mut buffer = vec![0u8; dims * 4];
+    
+    for _ in 0..num_vectors {
+        reader.read_exact(&mut buffer).unwrap();
+        
+        let vector: Vec<f32> = buffer
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+        
+        vectors.push(vector);
+    }
+    
+    (vectors, dims)
 }
 
 fn compute_ground_truth(
@@ -49,43 +72,42 @@ fn bench_recall_fast(c: &mut Criterion) {
     
     println!("\n=== Fast Recall Benchmark (for development) ===\n");
     
-    // Small dataset for fast iteration
-    let dim = 128;
-    let num_vectors = 2_000;
-    let num_queries = 20;  // Fewer queries
+    // Load pre-generated clustered dataset
+    println!("Loading dataset from datasets/data_10k_1024d_100clusters.bin...");
+    let (vectors, dim) = load_vectors("datasets/data_10k_1024d_100clusters.bin");
+    let num_vectors = vectors.len();
+    let num_queries = 50;  // More queries now that we have clustered data
     let k = 10;
     
     println!("Dataset: {} vectors, {} dims, {} queries", num_vectors, dim, num_queries);
-    println!("Building index...");
-    
-    let vectors = generate_random_vectors(num_vectors, dim);
+    println!("Building index...\n");
     
     // Test different tree configurations quickly
     let configs = [
-        (10, 50, "large_leaves"),
-        (10, 30, "medium_leaves"),
-        (10, 20, "small_leaves"),
+        (100, 100, "turbopuffer"),
+        (10, 100, "balanced"),
+        (20, 100, "wide"),
     ];
     
-    println!("\n{:<15} {:<8} {:<10} {:<12} {:<15}", 
-             "Config", "Depth", "Recall@10", "Latency(μs)", "Build(s)");
-    println!("{}", "-".repeat(65));
+    println!("{:<15} {:<8} {:<10} {:<12} {:<15} {:<10}", 
+             "Config", "Depth", "Recall@10", "Latency(μs)", "Build(s)", "Probes");
+    println!("{}", "-".repeat(75));
     
-    for (branching, max_leaf, name) in configs {
+    for (branching, target_leaf, name) in configs {
         let build_start = std::time::Instant::now();
         let index = ClusteredIndex::build(
             vectors.clone(),
             format!("recall_fast_{}.bin", name),
             branching,
-            max_leaf,
+            target_leaf,
             DistanceMetric::L2,
-            10,  // Fewer k-means iterations
+            15,  // K-means iterations
         ).expect("Failed to build index");
         let build_time = build_start.elapsed().as_secs_f64();
         
-        // Use in-dataset queries (should have good recall)
+        // Use in-dataset queries from different clusters (should have good recall)
         let queries: Vec<Vec<f32>> = (0..num_queries)
-            .map(|i| vectors[i * 100].clone())
+            .map(|i| vectors[i * (num_vectors / num_queries)].clone())
             .collect();
         
         // Compute ground truth
@@ -95,8 +117,8 @@ fn bench_recall_fast(c: &mut Criterion) {
             .collect();
         
         // Test with balanced config
-        let probes = 3;
-        let rerank = 3;
+        let probes = 5;
+        let rerank = 10;
         
         // Measure recall
         let mut total_recall = 0.0;
@@ -113,14 +135,14 @@ fn bench_recall_fast(c: &mut Criterion) {
         }
         let latency_us = start.elapsed().as_micros() as f64 / num_queries as f64;
         
-        println!("{:<15} {:<8} {:<10.1}% {:<12.1} {:<15.2}", 
-                 name, index.max_depth(), avg_recall * 100.0, latency_us, build_time);
+        println!("{:<15} {:<8} {:<10.1}% {:<12.1} {:<15.2} {:<10}", 
+                 name, index.max_depth(), avg_recall * 100.0, latency_us, build_time, probes);
         
         std::fs::remove_file(format!("recall_fast_{}.bin", name)).ok();
     }
     
-    println!("\n💡 Quick iteration benchmark - use for development");
-    println!("   Run full benchmarks (recall_proper) before production!");
+    println!("\n💡 Fast benchmark using clustered data (100 clusters)");
+    println!("   Use for quick development iteration!");
     
     group.finish();
 }

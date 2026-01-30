@@ -78,13 +78,13 @@ name = "tune_tree_params"
 harness = false
 
 [[bench]]
-name = "recall_proper"
-harness = false
-
-[[bench]]
 name = "recall_fast"
 harness = false
 
 [[bench]]
 name = "speed_fast"
+harness = false
+
+[[bench]]
+name = "scale_1m"
 harness = false

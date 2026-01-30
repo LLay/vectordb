@@ -1,0 +1,210 @@
+
+ cargo run --release --example observability_demo
+   Compiling vectordb v0.1.0 (/Users/lyon/workspace/vectordb/vectordb)
+    Finished `release` profile [optimized] target(s) in 6.22s
+     Running `target/release/examples/observability_demo`
+╔═════════════════════════════════════════════════════════════════╗
+║            Index Observability Demonstration                    ║
+╚═════════════════════════════════════════════════════════════════╝
+
+Loading dataset from datasets/data_1m_1024d_1000clusters.bin...
+  → 1000000 vectors, 1024 dimensions
+  ✓ Loaded successfully
+
+Dataset: 1000000 vectors, 1024 dimensions
+
+
+══════════════════════════════════════════════════════════════════════
+Configuration: turbopuffer leaves (branching=100, target_leaf_size=100)
+══════════════════════════════════════════════════════════════════════
+Building adaptive hierarchical index...
+  Vectors: 1000000
+  Branching factor: 100
+  Max leaf size: 100
+Binary quantizer: threshold = -0.0004
+  Vector file: 3906.25 MB
+Building tree...
+Build time: 837.287625916s
+  Max depth: 7
+  Total nodes: 13498
+  Root nodes: 100
+  Leaves: 10828 total, avg size: 92.4, min: 30, max: 200
+  Leaf size distribution: min=30, p25=53, median=83, p75=125, p90=163, max=200
+  Histogram:
+     30- 47: ███████ 2119
+     48- 65: ██████ 1767
+     66- 83: █████ 1536
+     84-101: ████ 1303
+    102-119: ████ 1090
+    120-137: ███ 905
+    138-155: ██ 757
+    156-173: ██ 627
+    174-191: █ 523
+    192-200: █ 201
+
+=== Tree Structure ===
+Level 0: (90) (31) (86) (8) (86) (97) (61) (88) (47) (96) (27) (6) (10) (81) (75) (59) (37) (11) (85) (23) (43) (8) (36) (85) (15) (9) (93) (87) (21) (89) (46) (77) (86) (29) (8) (70) (75) (22) (92) (9) (10) (38) (59) (96) (87) (81) (81) (20) (72) (94) (7) (45) (15) (63) (80) (84) (94) (18) (39) (49) (38) (30) (39) (6) (38) (56) (9) (35) (37) (30) (84) (47) (38) (50) (96) (6) (79) (83) (34) (5) (17) (84) (52) (36) (5) (96) (56) (12) (29) (29) (97) (7) (79) (100) (9) (89) (80) (14) (7) (45)
+Level 1: 5019 nodes (1793 internal, 3226 leaves)
+[100] [180] [168] [159] (3) ... (2) [38] [32] [35] [86]
+Level 2: 6233 nodes (685 internal, 5548 leaves)
+[76] [168] [126] [86] [78] ... [41] [115] [71] [97] [118]
+Level 3: 1906 nodes (87 internal, 1819 leaves)
+[73] [76] [112] [40] [69] ... [38] [149] [67] [139] [64]
+Level 4: 227 nodes (5 internal, 222 leaves)
+[55] [152] [83] [94] [44] ... [56] [105] [54] [40] [180]
+Level 5: [88] [40] [86] [159] [76] [64] [55] [89] [48] [165] [54] [121] [35]
+Legend: [n] = leaf with n vectors, (n) = internal node with n children
+
+
+--- Search Performance ---
+
+Probes = 3:
+--------------------------------------------------
+  rerank_factor=3: Recall@1000=47.8%, reranked=478, returned=478
+
+=== Search Statistics ===
+Tree traversal:
+  Depth: 7
+  Probes requested: 3
+    Level 0: 100 nodes explored
+    Level 1: 225 nodes explored
+    Level 2: 3 nodes explored
+    Level 3: 3 nodes explored
+    Level 4: 0 nodes explored
+
+Leaf coverage:
+  Total leaves: 10828
+  Leaves searched: 7
+  Coverage: 0.06%
+
+Vector processing:
+  Total vectors: 1000000
+  Binary scanned: 478 (0.05%)
+  Full precision reranked: 478 (0.05%)
+  Final results returned: varies by k
+
+
+Probes = 5:
+--------------------------------------------------
+  rerank_factor=3: Recall@1000=71.3%, reranked=713, returned=713
+
+=== Search Statistics ===
+Tree traversal:
+  Depth: 7
+  Probes requested: 5
+    Level 0: 100 nodes explored
+    Level 1: 417 nodes explored
+    Level 2: 3 nodes explored
+    Level 3: 3 nodes explored
+    Level 4: 0 nodes explored
+
+Leaf coverage:
+  Total leaves: 10828
+  Leaves searched: 9
+  Coverage: 0.08%
+
+Vector processing:
+  Total vectors: 1000000
+  Binary scanned: 713 (0.07%)
+  Full precision reranked: 713 (0.07%)
+  Final results returned: varies by k
+
+
+Probes = 10:
+--------------------------------------------------
+  rerank_factor=3: Recall@1000=100.0%, reranked=1222, returned=1000
+
+=== Search Statistics ===
+Tree traversal:
+  Depth: 7
+  Probes requested: 10
+    Level 0: 100 nodes explored
+    Level 1: 872 nodes explored
+    Level 2: 6 nodes explored
+    Level 3: 3 nodes explored
+    Level 4: 0 nodes explored
+
+Leaf coverage:
+  Total leaves: 10828
+  Leaves searched: 16
+  Coverage: 0.15%
+
+Vector processing:
+  Total vectors: 1000000
+  Binary scanned: 1222 (0.12%)
+  Full precision reranked: 1222 (0.12%)
+  Final results returned: varies by k
+
+
+Probes = 25:
+--------------------------------------------------
+  rerank_factor=3: Recall@1000=100.0%, reranked=3000, returned=1000
+
+=== Search Statistics ===
+Tree traversal:
+  Depth: 7
+  Probes requested: 25
+    Level 0: 100 nodes explored
+    Level 1: 2196 nodes explored
+    Level 2: 40 nodes explored
+    Level 3: 8 nodes explored
+    Level 4: 3 nodes explored
+    Level 5: 0 nodes explored
+
+Leaf coverage:
+  Total leaves: 10828
+  Leaves searched: 45
+  Coverage: 0.42%
+
+Vector processing:
+  Total vectors: 1000000
+  Binary scanned: 3616 (0.36%)
+  Full precision reranked: 3000 (0.30%)
+  Final results returned: varies by k
+
+
+
+--- Generating Visualizations ---
+
+
+╔══════════════════════════════════════════════════════════════╗
+║              Search Coverage Analysis                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+Ground Truth Distribution:
+  1000 nearest neighbors spread across 13 leaves
+  Top leaves with GT vectors:
+    ✓ Leaf 8447 contains 157 GT vectors
+    ✓ Leaf 8439 contains 134 GT vectors
+    ✓ Leaf 8441 contains 111 GT vectors
+    ✓ Leaf 8428 contains 87 GT vectors
+    ✓ Leaf 8455 contains 80 GT vectors
+    ✓ Leaf 8406 contains 78 GT vectors
+    ✓ Leaf 8431 contains 69 GT vectors
+    ✓ Leaf 8429 contains 66 GT vectors
+    ✓ Leaf 8427 contains 54 GT vectors
+    ✓ Leaf 8438 contains 49 GT vectors
+
+Search Coverage:
+  Searched 45 leaves total
+  13 leaves contain GT vectors (100%)
+  32 leaves searched but no GT (wasted effort)
+  0 leaves with GT were MISSED
+
+✓ Good coverage!
+
+Generating vector space visualization...
+  Computing 2D projection using random projection...
+  ✓ Saved to examples/visualization/vector_space.csv
+
+Generating tree structure visualization...
+  ✓ Saved to examples/visualization/tree_structure.dot
+  Render with: dot -Tpng examples/visualization/tree_structure.dot -o tree_structure.png
+  Or view online: https://dreampuf.github.io/GraphvizOnline/ (paste file contents)
+
+╔═══════════════════════════════════════════════════════════════╗
+║              Visualization Files Generated                    ║
+╚═══════════════════════════════════════════════════════════════╝
+Generated visualizations
+  examples/visualization/vector_space.png
+  examples/visualization/tree_structure.png

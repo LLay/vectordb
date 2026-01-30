@@ -1,0 +1,6 @@
+# Compiled binaries from dataset generation scripts
+generate_datasets
+generate_1m_dataset
+
+# Dataset binary files
+*.bin

@@ -90,7 +90,7 @@ fn main() {
     println!("╚═════════════════════════════════════════════════════════════════╝\n");
     
     // Try to load pre-generated dataset, fall back to random generation
-    let dataset_file = "datasets/data_100k_1024d_100clusters.bin";
+    let dataset_file = "datasets/data_1m_1024d_1000clusters.bin";
     let (vectors, dim) = if let Some((vecs, d)) = load_vectors_from_file(dataset_file) {
         (vecs, d)
     } else {
@@ -141,7 +141,7 @@ fn main() {
         // Store the last stats for visualization
         let mut last_stats = None;
         
-        for probes in [10] {
+        for probes in [3, 5, 10, 25] {
             println!("Probes = {}:", probes);
             println!("{}", "-".repeat(50));
             
@@ -176,7 +176,7 @@ fn main() {
                 query,
                 &gt,
                 &stats,
-                &format!("examples/visualization/vector_space_{}.csv", name.replace(" ", "_")),
+                &format!("examples/visualization/vector_space.csv"),
             ).expect("Failed to generate vector space visualization");
             
             // Generate tree structure visualization
@@ -185,7 +185,7 @@ fn main() {
                 &index,
                 &stats,
                 &gt,
-                &format!("examples/visualization/tree_structure_{}.dot", name.replace(" ", "_")),
+                &format!("examples/visualization/tree_structure.dot"),
             ).expect("Failed to generate tree visualization");
         }
         

@@ -88,13 +88,13 @@ impl ClusteredIndex {
         vectors: Vec<Vec<f32>>,
         vector_file: P,
         branching_factor: usize,
-        max_leaf_size: usize,
+        target_leaf_size: usize,
         metric: DistanceMetric,
         max_iterations: usize,
     ) -> std::io::Result<Self> {
         assert!(!vectors.is_empty(), "Cannot build index from empty vectors");
         assert!(branching_factor >= 2, "Branching factor must be >= 2");
-        assert!(max_leaf_size >= 10, "Max leaf size must be >= 10");
+        assert!(target_leaf_size >= 10, "Target leaf size must be >= 10");
         
         let dimension = vectors[0].len();
         let num_vectors = vectors.len();
@@ -102,7 +102,7 @@ impl ClusteredIndex {
         println!("Building adaptive hierarchical index...");
         println!("  Vectors: {}", num_vectors);
         println!("  Branching factor: {}", branching_factor);
-        println!("  Max leaf size: {}", max_leaf_size);
+        println!("  Target leaf size: {}", target_leaf_size);
 
         // Create binary quantizer
         let quantizer = BinaryQuantizer::from_vectors(&vectors);
@@ -128,7 +128,7 @@ impl ClusteredIndex {
             (0..num_vectors).collect(),
             0,
             &mut max_depth_reached,
-            max_leaf_size,
+            target_leaf_size,
             branching_factor,
             metric,
             max_iterations,
@@ -169,7 +169,7 @@ impl ClusteredIndex {
             metric,
             dimension,
             max_depth: max_depth_reached,
-            max_leaf_size,
+            max_leaf_size: target_leaf_size,
         })
     }
     
@@ -832,6 +832,7 @@ impl ClusteredIndex {
         // Navigate tree (same logic as search() but with stats tracking)
         use rayon::prelude::*;
         let mut current_nodes = self.root_ids.clone();
+        let mut accumulated_leaves = Vec::new();
         
         loop {
             stats.probes_per_level.push(current_nodes.len());
@@ -869,42 +870,48 @@ impl ClusteredIndex {
                 .map(|(id, _)| *id)
                 .collect();
             
-            // Check if leaves
-            let first_node = &self.nodes[top_nodes[0]];
-            if first_node.children.is_empty() {
-                // Reached leaves
-                stats.leaves_searched = top_nodes.len();
-                stats.leaves_searched_ids = top_nodes.clone();
-                
-                // Count vectors in leaves
-                for &leaf_id in &top_nodes {
-                    stats.vectors_scanned_binary += self.nodes[leaf_id].vector_indices.len();
-                }
-                
-                // Search leaves and track reranking
-                let candidates_with_dist = self.collect_leaf_candidates(&top_nodes, &query_binary);
-                
-                let rerank_count = (k * rerank_factor).min(candidates_with_dist.len());
-                stats.vectors_reranked_full = rerank_count;
-                
-                let mut top_candidates = candidates_with_dist;
-                top_candidates.sort_by_key(|x| x.1);
-                top_candidates.truncate(rerank_count);
-                
-                let reranked = self.rerank_with_full_precision(&top_candidates, query);
-                let results = self.finalize_results(reranked, k);
-                
-                return (results, stats);
-            }
+            // Separate leaf nodes from internal nodes (tree may be unbalanced)
+            let (leaf_nodes, internal_nodes): (Vec<usize>, Vec<usize>) = top_nodes
+                .into_iter()
+                .partition(|&node_id| self.nodes[node_id].children.is_empty());
             
-            // Expand to children
-            current_nodes = top_nodes
+            // Accumulate any leaves we found at this level
+            accumulated_leaves.extend(leaf_nodes);
+            
+            // Continue traversing internal nodes to find deeper leaves
+            current_nodes = internal_nodes
                 .iter()
                 .flat_map(|&node_id| self.nodes[node_id].children.clone())
                 .collect();
         }
         
-        (Vec::new(), stats)
+        // Search all accumulated leaves
+        if accumulated_leaves.is_empty() {
+            return (Vec::new(), stats);
+        }
+        
+        stats.leaves_searched = accumulated_leaves.len();
+        stats.leaves_searched_ids = accumulated_leaves.clone();
+        
+        // Count vectors in leaves
+        for &leaf_id in &accumulated_leaves {
+            stats.vectors_scanned_binary += self.nodes[leaf_id].vector_indices.len();
+        }
+        
+        // Search leaves and track reranking
+        let candidates_with_dist = self.collect_leaf_candidates(&accumulated_leaves, &query_binary);
+        
+        let rerank_count = (k * rerank_factor).min(candidates_with_dist.len());
+        stats.vectors_reranked_full = rerank_count;
+        
+        let mut top_candidates = candidates_with_dist;
+        top_candidates.sort_by_key(|x| x.1);
+        top_candidates.truncate(rerank_count);
+        
+        let reranked = self.rerank_with_full_precision(&top_candidates, query);
+        let results = self.finalize_results(reranked, k);
+        
+        (results, stats)
     }
     
     /// Print search statistics

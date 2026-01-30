@@ -1,6 +1,5 @@
 /target
-*.bin
-/datasets/*.bin
+**.bin
 
 # Visualization outputs
 /examples/visualization/vector_space*.csv
@@ -10,3 +9,4 @@
 viz_index.bin
 .DS_Store
 venv/   
+**.log

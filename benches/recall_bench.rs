@@ -87,12 +87,6 @@ fn calculate_rank_error(ground_truth: &[usize], results: &[(usize, f32)]) -> f64
     }
 }
 
-struct RecallMetrics {
-    recall: f64,
-    rank_error: f64,
-    latency_us: f64,
-}
-
 fn bench_recall_tuning(c: &mut Criterion) {
     let mut group = c.benchmark_group("recall_tuning");
     group.sample_size(20);

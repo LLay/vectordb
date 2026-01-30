@@ -3,6 +3,7 @@
 /// Shows tree structure, leaf distribution, and search statistics
 
 use vectordb::{ClusteredIndex, DistanceMetric};
+use vectordb::visualization::{visualize_vector_space, visualize_tree_structure, print_coverage_report};
 use rand::Rng;
 use std::collections::HashSet;
 use std::fs::File;
@@ -137,6 +138,9 @@ fn main() {
         
         println!("\n--- Search Performance ---\n");
         
+        // Store the last stats for visualization
+        let mut last_stats = None;
+        
         for probes in [10] {
             println!("Probes = {}:", probes);
             println!("{}", "-".repeat(50));
@@ -150,11 +154,57 @@ fn main() {
                          rerank_factor, k, recall * 100.0, stats.vectors_reranked_full, results.len());
                 
                 index.print_search_stats(&stats, probes);
+                
+                // Save stats for visualization
+                last_stats = Some(stats);
             }
             println!();
+        }
+        
+        // Generate visualizations for this configuration
+        if let Some(stats) = last_stats {
+            println!("\n--- Generating Visualizations ---\n");
+            
+            // Generate coverage report
+            print_coverage_report(&index, &gt, &stats);
+            
+            // Generate vector space visualization
+            println!();
+            visualize_vector_space(
+                &index,
+                &vectors,
+                query,
+                &gt,
+                &stats,
+                &format!("examples/visualization/vector_space_{}.csv", name.replace(" ", "_")),
+            ).expect("Failed to generate vector space visualization");
+            
+            // Generate tree structure visualization
+            println!();
+            visualize_tree_structure(
+                &index,
+                &stats,
+                &gt,
+                &format!("examples/visualization/tree_structure_{}.dot", name.replace(" ", "_")),
+            ).expect("Failed to generate tree visualization");
         }
         
         // Clean up
         std::fs::remove_file(format!("obs_demo_{}.bin", name.replace(" ", "_"))).ok();
     }
+    
+    println!("\n╔═══════════════════════════════════════════════════════════════╗");
+    println!("║              Visualization Files Generated                    ║");
+    println!("╚═══════════════════════════════════════════════════════════════╝");
+    // println!("\nRun these commands to generate images:");
+    // println!("  python3 visualize.py  # Generates vector_space.png");
+    // println!("  dot -Tpng tree_structure_turbopuffer_leaves.dot -o tree_structure.png");
+
+    // Run visualization generation script
+    std::process::Command::new("./examples/visualization/generate_visualizations.sh")
+        .output()
+        .expect("Failed to run generate_visualizations.sh");
+    println!("Generated visualizations");
+    println!("  examples/visualization/vector_space.png");
+    println!("  examples/visualization/tree_structure.png");
 }

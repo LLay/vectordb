@@ -8,6 +8,7 @@ pub mod index;
 pub mod clustering;
 pub mod quantization;
 pub mod storage;
+pub mod visualization;
 
 // Re-export commonly used types
 pub use distance::{DistanceMetric, distance, batch_distances, batch_distances_parallel};

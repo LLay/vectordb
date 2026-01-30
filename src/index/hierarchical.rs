@@ -16,19 +16,19 @@ use std::time::Instant;
 
 /// A node in the hierarchical tree
 #[derive(Debug, Clone)]
-struct ClusterNode {
+pub struct ClusterNode {
     /// Node ID
     #[allow(dead_code)]
-    id: usize,
+    pub id: usize,
     /// Binary quantized centroid
     #[allow(dead_code)]
-    binary_centroid: BinaryVector,
+    pub binary_centroid: BinaryVector,
     /// Full precision centroid (for reranking)
-    full_centroid: Vec<f32>,
+    pub full_centroid: Vec<f32>,
     /// Children node IDs (empty for leaf nodes)
-    children: Vec<usize>,
+    pub children: Vec<usize>,
     /// Vector indices (only for leaf nodes)
-    vector_indices: Vec<usize>,
+    pub vector_indices: Vec<usize>,
 }
 
 /// Search statistics for observability
@@ -36,6 +36,7 @@ struct ClusterNode {
 pub struct SearchStats {
     pub total_leaves: usize,
     pub leaves_searched: usize,
+    pub leaves_searched_ids: Vec<usize>,  // IDs of leaves that were searched
     pub total_vectors: usize,
     pub vectors_scanned_binary: usize,
     pub vectors_reranked_full: usize,
@@ -49,15 +50,15 @@ pub struct SearchStats {
 /// Hot vectors are automatically cached by the OS.
 pub struct ClusteredIndex {
     /// All nodes in the tree (indexed by node ID)
-    nodes: Vec<ClusterNode>,
+    pub nodes: Vec<ClusterNode>,
     /// Root node IDs (level 0)
-    root_ids: Vec<usize>,
+    pub root_ids: Vec<usize>,
     /// Binary quantizer
-    quantizer: BinaryQuantizer,
+    pub quantizer: BinaryQuantizer,
     /// Pre-quantized binary vectors (for fast candidate scanning)
-    binary_vectors: Vec<BinaryVector>,
+    pub binary_vectors: Vec<BinaryVector>,
     /// Full precision vectors (memory-mapped for RAM efficiency)
-    full_vectors: MmapVectorStore,
+    pub full_vectors: MmapVectorStore,
     /// Distance metric
     metric: DistanceMetric,
     /// Dimensionality
@@ -820,6 +821,7 @@ impl ClusteredIndex {
         let mut stats = SearchStats {
             total_leaves,
             leaves_searched: 0,
+            leaves_searched_ids: Vec::new(),
             total_vectors: self.binary_vectors.len(),
             vectors_scanned_binary: 0,
             vectors_reranked_full: 0,
@@ -872,6 +874,7 @@ impl ClusteredIndex {
             if first_node.children.is_empty() {
                 // Reached leaves
                 stats.leaves_searched = top_nodes.len();
+                stats.leaves_searched_ids = top_nodes.clone();
                 
                 // Count vectors in leaves
                 for &leaf_id in &top_nodes {

@@ -12,6 +12,7 @@ use crate::distance::{distance, DistanceMetric};
 use crate::quantization::{BinaryQuantizer, BinaryVector, hamming_distance};
 use crate::storage::MmapVectorStore;
 use std::path::Path;
+use std::time::Instant;
 
 /// A node in the hierarchical tree
 #[derive(Debug, Clone)]
@@ -20,14 +21,26 @@ struct ClusterNode {
     #[allow(dead_code)]
     id: usize,
     /// Binary quantized centroid
+    #[allow(dead_code)]
     binary_centroid: BinaryVector,
     /// Full precision centroid (for reranking)
-    #[allow(dead_code)]
     full_centroid: Vec<f32>,
     /// Children node IDs (empty for leaf nodes)
     children: Vec<usize>,
     /// Vector indices (only for leaf nodes)
     vector_indices: Vec<usize>,
+}
+
+/// Search statistics for observability
+#[derive(Debug, Clone)]
+pub struct SearchStats {
+    pub total_leaves: usize,
+    pub leaves_searched: usize,
+    pub total_vectors: usize,
+    pub vectors_scanned_binary: usize,
+    pub vectors_reranked_full: usize,
+    pub tree_depth: usize,
+    pub probes_per_level: Vec<usize>,
 }
 
 /// Hierarchical clustered index with binary quantization
@@ -64,8 +77,10 @@ impl ClusteredIndex {
     /// # Arguments
     /// * `vectors` - The vectors to index
     /// * `vector_file` - Path where vectors will be stored on disk
-    /// * `branching_factor` - Number of clusters at each level (~10-20 typical)
-    /// * `max_leaf_size` - Maximum vectors per leaf (splits if larger, ~100-200 typical)
+    /// * `branching_factor` - Number of clusters at each level
+    ///   - High values (50-100) create shallow, wide trees (better for large datasets)
+    ///   - Low values (10-20) create deep, narrow trees (better for hierarchical data)
+    /// * `max_leaf_size` - Maximum vectors per leaf (splits if larger, ~20-30 recommended)
     /// * `metric` - Distance metric to use
     /// * `max_iterations` - Maximum k-means iterations
     pub fn build<P: AsRef<Path>>(
@@ -92,13 +107,9 @@ impl ClusteredIndex {
         let quantizer = BinaryQuantizer::from_vectors(&vectors);
 
         // Pre-quantize all vectors for fast candidate scanning
-        println!("  Quantizing {} vectors...", num_vectors);
         let binary_vectors = quantizer.quantize_batch_parallel(&vectors);
-        println!("  Quantization complete: {} bytes per vector", 
-                 binary_vectors[0].bits.len() * 8);
 
         // Write vectors to disk and create memory-mapped store
-        println!("  Writing {} vectors to disk...", vectors.len());
         let full_vectors = MmapVectorStore::create(&vector_file, &vectors)?;
         let size_mb = full_vectors.size_bytes() as f64 / 1_048_576.0;
         println!("  Vector file: {:.2} MB", size_mb);
@@ -107,7 +118,9 @@ impl ClusteredIndex {
         let mut nodes = Vec::new();
         let mut next_node_id = 0;
         let mut max_depth_reached = 0;
-        
+
+        println!("Building tree...");
+        let build_start = Instant::now();
         let root_ids = Self::build_recursive(
             &vectors,
             &quantizer,
@@ -121,7 +134,8 @@ impl ClusteredIndex {
             &mut nodes,
             &mut next_node_id,
         );
-
+        let build_time = build_start.elapsed();
+        println!("Build time: {:?}", build_time);
         println!("  Max depth: {}", max_depth_reached);
         println!("  Total nodes: {}", nodes.len());
         println!("  Root nodes: {}", root_ids.len());
@@ -133,11 +147,16 @@ impl ClusteredIndex {
             .map(|n| n.vector_indices.len())
             .collect();
         
+        let num_leaves = leaf_sizes.len();
         if !leaf_sizes.is_empty() {
             let avg_leaf = leaf_sizes.iter().sum::<usize>() as f64 / leaf_sizes.len() as f64;
             let max_leaf = *leaf_sizes.iter().max().unwrap();
             let min_leaf = *leaf_sizes.iter().min().unwrap();
-            println!("  Leaf sizes: min={}, max={}, avg={:.1}", min_leaf, max_leaf, avg_leaf);
+            println!("  Leaves: {} total, avg size: {:.1}, min: {}, max: {}", 
+                     num_leaves, avg_leaf, min_leaf, max_leaf);
+            
+            // Print leaf size distribution
+            Self::print_leaf_distribution(&leaf_sizes);
         }
 
         Ok(Self {
@@ -233,20 +252,26 @@ impl ClusteredIndex {
                 next_node_id,
             );
 
-            // Create internal node for this cluster
-            let node_id = *next_node_id;
-            *next_node_id += 1;
+            // If recursion returned only 1 child, skip creating an internal node
+            // and use the child directly (avoids single-child internal nodes)
+            if children.len() == 1 {
+                node_ids.push(children[0]);
+            } else {
+                // Create internal node for this cluster
+                let node_id = *next_node_id;
+                *next_node_id += 1;
 
-            let node = Self::create_internal_from_cluster(
-                node_id,
-                cluster_id,
-                &binary_centroids,
-                &kmeans.centroids,
-                children,
-            );
+                let node = Self::create_internal_from_cluster(
+                    node_id,
+                    cluster_id,
+                    &binary_centroids,
+                    &kmeans.centroids,
+                    children,
+                );
 
-            nodes.push(node);
-            node_ids.push(node_id);
+                nodes.push(node);
+                node_ids.push(node_id);
+            }
         }
 
         node_ids
@@ -268,27 +293,30 @@ impl ClusteredIndex {
     ) -> Vec<(usize, f32)> {
         assert_eq!(query.len(), self.dimension, "Query dimension mismatch");
 
-        // Quantize query
+        // Quantize query for leaf-level filtering
         let query_binary = self.quantizer.quantize(query);
 
-        // Start from root and traverse down
+        // Accumulate all leaves we encounter during traversal
+        let mut accumulated_leaves = Vec::new();
+        
+        // Start from root and traverse down using FULL PRECISION centroids
         let mut current_nodes = self.root_ids.clone();
         
-        // Traverse tree until we reach leaves (adaptive depth)
+        // Traverse tree, accumulating leaves along the way
         loop {
             if current_nodes.is_empty() {
                 break;
             }
 
-            // Find nearest nodes at this level (parallel if many nodes)
+            // Find nearest nodes using FULL PRECISION centroids (accurate routing)
             use rayon::prelude::*;
-            let mut node_distances: Vec<(usize, u32)> = if current_nodes.len() > 10 {
+            let mut node_distances: Vec<(usize, f32)> = if current_nodes.len() > 10 {
                 // Parallel distance computation for many nodes
                 current_nodes
                     .par_iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = hamming_distance(&query_binary, &node.binary_centroid);
+                        let dist = distance(query, &node.full_centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()
@@ -298,13 +326,13 @@ impl ClusteredIndex {
                     .iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = hamming_distance(&query_binary, &node.binary_centroid);
+                        let dist = distance(query, &node.full_centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()
             };
 
-            node_distances.sort_by_key(|x| x.1);
+            node_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
             // Take top probes_per_level nodes
             let top_nodes: Vec<usize> = node_distances
@@ -313,21 +341,27 @@ impl ClusteredIndex {
                 .map(|(id, _)| *id)
                 .collect();
 
-            // Check if these are leaf nodes
-            let first_node = &self.nodes[top_nodes[0]];
-            if first_node.children.is_empty() {
-                // Reached leaf level - collect candidates
-                return self.search_leaves(&top_nodes, query, &query_binary, k, rerank_factor);
-            }
-
-            // Not leaves yet - expand to children for next level
-            current_nodes = top_nodes
+            // Separate leaf nodes from internal nodes (tree may be unbalanced)
+            let (leaf_nodes, internal_nodes): (Vec<usize>, Vec<usize>) = top_nodes
+                .into_iter()
+                .partition(|&node_id| self.nodes[node_id].children.is_empty());
+            
+            // Accumulate any leaves we found at this level
+            accumulated_leaves.extend(leaf_nodes);
+            
+            // Continue traversing internal nodes to find deeper leaves
+            current_nodes = internal_nodes
                 .iter()
                 .flat_map(|&node_id| self.nodes[node_id].children.clone())
                 .collect();
         }
 
-        Vec::new()
+        // Search all accumulated leaves (both shallow and deep)
+        if accumulated_leaves.is_empty() {
+            Vec::new()
+        } else {
+            self.search_leaves(&accumulated_leaves, query, &query_binary, k, rerank_factor)
+        }
     }
 
     /// Search within leaf nodes - two-phase algorithm
@@ -409,13 +443,17 @@ impl ClusteredIndex {
         cluster_size: usize,
         current_depth: usize,
         max_leaf_size: usize,
-        branching_factor: usize,
+        _branching_factor: usize,
     ) -> bool {
-        const MAX_TREE_DEPTH: usize = 15; // Safety limit to prevent infinite recursion
+        const MAX_TREE_DEPTH: usize = 10; // Safety limit to prevent infinite recursion
         
-        cluster_size <= max_leaf_size 
-            || current_depth >= MAX_TREE_DEPTH
-            || cluster_size < branching_factor
+        // Create a leaf if:
+        // 1. Cluster is small enough (primary condition)
+        // 2. We've reached safety depth limit (prevents infinite recursion)
+        // 
+        // Note: We DON'T check cluster_size < branching_factor because that would
+        // create tiny leaves when using large branching factors (e.g., 100)
+        cluster_size <= max_leaf_size || current_depth >= MAX_TREE_DEPTH
     }
 
     /// Create a leaf node from a set of vector indices
@@ -632,6 +670,241 @@ impl ClusteredIndex {
     /// Get maximum leaf size
     pub fn max_leaf_size(&self) -> usize {
         self.max_leaf_size
+    }
+    
+    /// Count the actual number of leaf nodes in the tree
+    pub fn count_leaves(&self) -> usize {
+        self.nodes.iter().filter(|n| n.children.is_empty()).count()
+    }
+    
+    /// Print a visualization of the tree structure (truncated if too wide)
+    pub fn print_tree_structure(&self, max_width: usize) {
+        println!("\n=== Tree Structure ===");
+        
+        let mut level = 0;
+        let mut current_level: Vec<usize> = self.root_ids.clone();
+        
+        while !current_level.is_empty() && level <= self.max_depth {
+            let num_nodes = current_level.len();
+            let num_leaves = current_level.iter()
+                .filter(|&&id| self.nodes[id].children.is_empty())
+                .count();
+            let num_internal = num_nodes - num_leaves;
+            
+            print!("Level {}: ", level);
+            
+            if num_nodes <= max_width {
+                for &node_id in &current_level {
+                    let node = &self.nodes[node_id];
+                    if node.children.is_empty() {
+                        print!("[{}] ", node.vector_indices.len());
+                    } else {
+                        print!("({}) ", node.children.len());
+                    }
+                }
+                println!();
+            } else {
+                println!("{} nodes ({} internal, {} leaves)", num_nodes, num_internal, num_leaves);
+                
+                // Show first few and last few
+                let show = (max_width / 2).min(5);
+                for i in 0..show.min(num_nodes) {
+                    let node = &self.nodes[current_level[i]];
+                    if node.children.is_empty() {
+                        print!("[{}] ", node.vector_indices.len());
+                    } else {
+                        print!("({}) ", node.children.len());
+                    }
+                }
+                if num_nodes > show * 2 {
+                    print!("... ");
+                }
+                for i in (num_nodes.saturating_sub(show))..num_nodes {
+                    let node = &self.nodes[current_level[i]];
+                    if node.children.is_empty() {
+                        print!("[{}] ", node.vector_indices.len());
+                    } else {
+                        print!("({}) ", node.children.len());
+                    }
+                }
+                println!();
+            }
+            
+            // Collect next level
+            let mut next_level = Vec::new();
+            for &node_id in &current_level {
+                next_level.extend_from_slice(&self.nodes[node_id].children);
+            }
+            current_level = next_level;
+            level += 1;
+        }
+        
+        println!("Legend: [n] = leaf with n vectors, (n) = internal node with n children\n");
+    }
+    
+    /// Print leaf size distribution histogram
+    fn print_leaf_distribution(leaf_sizes: &[usize]) {
+        let mut sorted = leaf_sizes.to_vec();
+        sorted.sort_unstable();
+        
+        let min = sorted[0];
+        let max = sorted[sorted.len() - 1];
+        let median = sorted[sorted.len() / 2];
+        let p25 = sorted[sorted.len() / 4];
+        let p75 = sorted[sorted.len() * 3 / 4];
+        let p90 = sorted[sorted.len() * 9 / 10];
+        
+        println!("  Leaf size distribution: min={}, p25={}, median={}, p75={}, p90={}, max={}", 
+                 min, p25, median, p75, p90, max);
+        
+        // Create histogram
+        let num_bins = 10;
+        let range = max - min + 1;
+        let bin_size = (range as f64 / num_bins as f64).ceil() as usize;
+        
+        if bin_size > 0 {
+            let mut bins = vec![0; num_bins];
+            for &size in sorted.iter() {
+                let bin = ((size - min) / bin_size).min(num_bins - 1);
+                bins[bin] += 1;
+            }
+            
+            println!("  Histogram:");
+            for (i, &count) in bins.iter().enumerate() {
+                let start = min + i * bin_size;
+                let end = (start + bin_size - 1).min(max);
+                let bar = "█".repeat((count * 40 / sorted.len()).max(1).min(40));
+                println!("    {:3}-{:3}: {} {}", start, end, bar, count);
+            }
+        }
+    }
+    
+    /// Search with statistics tracking
+    pub fn search_with_stats(
+        &self,
+        query: &[f32],
+        k: usize,
+        probes: usize,
+        rerank_factor: usize,
+    ) -> (Vec<(usize, f32)>, SearchStats) {
+        assert_eq!(query.len(), self.dimension);
+        
+        let total_leaves = self.count_leaves();
+        let query_binary = self.quantizer.quantize(query);
+        
+        // Track statistics
+        let mut stats = SearchStats {
+            total_leaves,
+            leaves_searched: 0,
+            total_vectors: self.binary_vectors.len(),
+            vectors_scanned_binary: 0,
+            vectors_reranked_full: 0,
+            tree_depth: self.max_depth,
+            probes_per_level: Vec::new(),
+        };
+        
+        // Navigate tree (same logic as search() but with stats tracking)
+        use rayon::prelude::*;
+        let mut current_nodes = self.root_ids.clone();
+        
+        loop {
+            stats.probes_per_level.push(current_nodes.len());
+            
+            if current_nodes.is_empty() {
+                break;
+            }
+            
+            // Compute distances
+            let mut node_distances: Vec<(usize, f32)> = if current_nodes.len() > 10 {
+                current_nodes
+                    .par_iter()
+                    .map(|&node_id| {
+                        let node = &self.nodes[node_id];
+                        let dist = distance(query, &node.full_centroid, self.metric);
+                        (node_id, dist)
+                    })
+                    .collect()
+            } else {
+                current_nodes
+                    .iter()
+                    .map(|&node_id| {
+                        let node = &self.nodes[node_id];
+                        let dist = distance(query, &node.full_centroid, self.metric);
+                        (node_id, dist)
+                    })
+                    .collect()
+            };
+            
+            node_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            
+            let top_nodes: Vec<usize> = node_distances
+                .iter()
+                .take(probes)
+                .map(|(id, _)| *id)
+                .collect();
+            
+            // Check if leaves
+            let first_node = &self.nodes[top_nodes[0]];
+            if first_node.children.is_empty() {
+                // Reached leaves
+                stats.leaves_searched = top_nodes.len();
+                
+                // Count vectors in leaves
+                for &leaf_id in &top_nodes {
+                    stats.vectors_scanned_binary += self.nodes[leaf_id].vector_indices.len();
+                }
+                
+                // Search leaves and track reranking
+                let candidates_with_dist = self.collect_leaf_candidates(&top_nodes, &query_binary);
+                
+                let rerank_count = (k * rerank_factor).min(candidates_with_dist.len());
+                stats.vectors_reranked_full = rerank_count;
+                
+                let mut top_candidates = candidates_with_dist;
+                top_candidates.sort_by_key(|x| x.1);
+                top_candidates.truncate(rerank_count);
+                
+                let reranked = self.rerank_with_full_precision(&top_candidates, query);
+                let results = self.finalize_results(reranked, k);
+                
+                return (results, stats);
+            }
+            
+            // Expand to children
+            current_nodes = top_nodes
+                .iter()
+                .flat_map(|&node_id| self.nodes[node_id].children.clone())
+                .collect();
+        }
+        
+        (Vec::new(), stats)
+    }
+    
+    /// Print search statistics
+    pub fn print_search_stats(&self, stats: &SearchStats, probes: usize) {
+        println!("\n=== Search Statistics ===");
+        println!("Tree traversal:");
+        println!("  Depth: {}", stats.tree_depth);
+        println!("  Probes requested: {}", probes);
+        for (level, &count) in stats.probes_per_level.iter().enumerate() {
+            println!("    Level {}: {} nodes explored", level, count);
+        }
+        
+        println!("\nLeaf coverage:");
+        println!("  Total leaves: {}", stats.total_leaves);
+        println!("  Leaves searched: {}", stats.leaves_searched);
+        println!("  Coverage: {:.2}%", 
+                 stats.leaves_searched as f64 / stats.total_leaves as f64 * 100.0);
+        
+        println!("\nVector processing:");
+        println!("  Total vectors: {}", stats.total_vectors);
+        println!("  Binary scanned: {} ({:.2}%)", 
+                 stats.vectors_scanned_binary,
+                 stats.vectors_scanned_binary as f64 / stats.total_vectors as f64 * 100.0);
+        println!("  Full precision reranked: {} ({:.2}%)", 
+                 stats.vectors_reranked_full,
+                 stats.vectors_reranked_full as f64 / stats.total_vectors as f64 * 100.0);
+        println!("  Final results returned: varies by k\n");
     }
 }
 

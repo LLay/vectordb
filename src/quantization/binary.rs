@@ -127,6 +127,7 @@ impl BinaryQuantizer {
         let total: f32 = vectors
             .iter()
             .flat_map(|v| v.iter())
+            .copied()
             .sum();
         let count = vectors.len() * dimension;
         let threshold = total / count as f32;

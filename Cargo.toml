@@ -68,3 +68,23 @@ harness = false
 [[bench]]
 name = "profile_bench"
 harness = false
+
+[[bench]]
+name = "recall_bench"
+harness = false
+
+[[bench]]
+name = "tune_tree_params"
+harness = false
+
+[[bench]]
+name = "recall_proper"
+harness = false
+
+[[bench]]
+name = "recall_fast"
+harness = false
+
+[[bench]]
+name = "speed_fast"
+harness = false

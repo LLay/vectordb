@@ -132,7 +132,7 @@ impl BinaryQuantizer {
         let count = vectors.len() * dimension;
         let threshold = total / count as f32;
         
-        println!("Binary quantizer: threshold = {:.4}", threshold);
+        // println!("Binary quantizer: threshold = {:.4}", threshold);
         
         Self {
             dimension,

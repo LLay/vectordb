@@ -1,6 +1,11 @@
 /target
 **.bin
 
+# SIFT benchmark dataset
+/datasets/sift/data/
+**.tar.gz
+sift_index*.bin
+
 # Visualization outputs
 /examples/visualization/vector_space*.csv
 /examples/visualization/vector_space*.png

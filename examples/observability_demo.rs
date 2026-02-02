@@ -90,7 +90,7 @@ fn main() {
     println!("╚═════════════════════════════════════════════════════════════════╝\n");
     
     // Try to load pre-generated dataset, fall back to random generation
-    let dataset_file = "datasets/data_1m_1024d_1000clusters.bin";
+    let dataset_file = "datasets/generated_by_me/data_1m_1024d_1000clusters.bin";
     let (vectors, dim) = if let Some((vecs, d)) = load_vectors_from_file(dataset_file) {
         (vecs, d)
     } else {

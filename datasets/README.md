@@ -17,12 +17,12 @@ rustc generate_datasets.rs && ./generate_datasets --large
 
 | File | Vectors | Dims | Clusters | Size | Type |
 |------|---------|------|----------|------|------|
-| `data_10k_1024d_10clusters.bin` | 10K | 1024 | 10 | ~39 MB | Gaussian clusters |
-| `data_10k_1024d_50clusters.bin` | 10K | 1024 | 50 | ~39 MB | Gaussian clusters |
-| `data_10k_1024d_100clusters.bin` | 10K | 1024 | 100 | ~39 MB | Gaussian clusters |
-| `data_100k_1024d_100clusters.bin` | 100K | 1024 | 100 | ~391 MB | Gaussian clusters |
-| `data_1m_1024d_1000clusters.bin` | 1M | 1024 | 1000 | ~3.9 GB | Gaussian clusters (--large) |
-| `data_10k_1024d_random.bin` | 10K | 1024 | - | ~39 MB | Uniform random |
+| `generated_by_me/data_10k_1024d_10clusters.bin` | 10K | 1024 | 10 | ~39 MB | Gaussian clusters |
+| `generated_by_me/data_10k_1024d_50clusters.bin` | 10K | 1024 | 50 | ~39 MB | Gaussian clusters |
+| `generated_by_me/data_10k_1024d_100clusters.bin` | 10K | 1024 | 100 | ~39 MB | Gaussian clusters |
+| `generated_by_me/data_100k_1024d_100clusters.bin` | 100K | 1024 | 100 | ~391 MB | Gaussian clusters |
+| `generated_by_me/data_1m_1024d_1000clusters.bin` | 1M | 1024 | 1000 | ~3.9 GB | Gaussian clusters (--large) |
+| `generated_by_me/data_10k_1024d_random.bin` | 10K | 1024 | - | ~39 MB | Uniform random |
 
 ## Dataset Format
 

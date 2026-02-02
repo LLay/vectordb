@@ -16,14 +16,14 @@ cargo run --release --example generate_datasets
 
 These datasets contain vectors grouped into natural clusters using Gaussian distributions. Each cluster has a random center, and vectors are sampled from a Gaussian distribution around that center (σ=0.2).
 
-- **`datasets/data_10k_1024d_10clusters.bin`** - 10,000 vectors, 10 natural clusters (~39 MB)
-- **`datasets/data_10k_1024d_50clusters.bin`** - 10,000 vectors, 50 natural clusters (~39 MB)
-- **`datasets/data_10k_1024d_100clusters.bin`** - 10,000 vectors, 100 natural clusters (~39 MB)
-- **`datasets/data_100k_1024d_100clusters.bin`** - 100,000 vectors, 100 natural clusters (~391 MB)
+- **`datasets/generated_by_me/data_10k_1024d_10clusters.bin`** - 10,000 vectors, 10 natural clusters (~39 MB)
+- **`datasets/generated_by_me/data_10k_1024d_50clusters.bin`** - 10,000 vectors, 50 natural clusters (~39 MB)
+- **`datasets/generated_by_me/data_10k_1024d_100clusters.bin`** - 10,000 vectors, 100 natural clusters (~39 MB)
+- **`datasets/generated_by_me/data_100k_1024d_100clusters.bin`** - 100,000 vectors, 100 natural clusters (~391 MB)
 
 ### Random Dataset (Baseline)
 
-- **`datasets/data_10k_1024d_random.bin`** - 10,000 vectors, uniform random distribution (~39 MB)
+- **`datasets/generated_by_me/data_10k_1024d_random.bin`** - 10,000 vectors, uniform random distribution (~39 MB)
 
 ## File Format
 
@@ -87,6 +87,6 @@ fn load_vectors(filename: &str) -> (Vec<Vec<f32>>, usize) {
 
 ## Examples Using Datasets
 
-- **`observability_demo.rs`** - Automatically loads `datasets/data_10k_1024d_100clusters.bin` if available
+- **`observability_demo.rs`** - Automatically loads `datasets/generated_by_me/data_10k_1024d_100clusters.bin` if available
 - **`inspect_dataset.rs`** - Inspects dataset statistics and checks for data quality issues
 

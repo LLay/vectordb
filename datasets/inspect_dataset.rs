@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 
 fn main() {
-    let filename = "datasets/data_10k_1024d_100clusters.bin";
+    let filename = "datasets/generated_by_me/data_10k_1024d_100clusters.bin";
     
     let file = File::open(filename).expect("Failed to open file");
     let mut reader = BufReader::new(file);

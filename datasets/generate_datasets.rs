@@ -28,29 +28,29 @@ fn main() {
     }
     
     // Generate different dataset types
-    generate_gaussian_clusters("data_10k_1024d_10clusters.bin", 10_000, 1024, 10);
-    generate_gaussian_clusters("data_10k_1024d_50clusters.bin", 10_000, 1024, 50);
-    generate_gaussian_clusters("data_10k_1024d_100clusters.bin", 10_000, 1024, 100);
-    generate_gaussian_clusters("data_100k_1024d_100clusters.bin", 100_000, 1024, 100);
+    generate_gaussian_clusters("generated_by_me/data_10k_1024d_10clusters.bin", 10_000, 1024, 10);
+    generate_gaussian_clusters("generated_by_me/data_10k_1024d_50clusters.bin", 10_000, 1024, 50);
+    generate_gaussian_clusters("generated_by_me/data_10k_1024d_100clusters.bin", 10_000, 1024, 100);
+    generate_gaussian_clusters("generated_by_me/data_100k_1024d_100clusters.bin", 100_000, 1024, 100);
     
     if generate_large {
         println!("\nGenerating large dataset (this will take a few minutes)...");
-        generate_gaussian_clusters("data_1m_1024d_1000clusters.bin", 1_000_000, 1024, 1000);
+        generate_gaussian_clusters("generated_by_me/data_1m_1024d_1000clusters.bin", 1_000_000, 1024, 1000);
     }
     
     // Also generate a uniform random dataset for comparison
-    generate_uniform_random("data_10k_1024d_random.bin", 10_000, 1024);
+    generate_uniform_random("generated_by_me/data_10k_1024d_random.bin", 10_000, 1024);
     
     println!("\n✓ All datasets generated successfully!");
     println!("\nDatasets available:");
-    println!("  - data_10k_1024d_10clusters.bin   (10K vectors, 10 clusters, ~39 MB)");
-    println!("  - data_10k_1024d_50clusters.bin   (10K vectors, 50 clusters, ~39 MB)");
-    println!("  - data_10k_1024d_100clusters.bin  (10K vectors, 100 clusters, ~39 MB)");
-    println!("  - data_100k_1024d_100clusters.bin (100K vectors, 100 clusters, ~391 MB)");
+    println!("  - generated_by_me/data_10k_1024d_10clusters.bin   (10K vectors, 10 clusters, ~39 MB)");
+    println!("  - generated_by_me/data_10k_1024d_50clusters.bin   (10K vectors, 50 clusters, ~39 MB)");
+    println!("  - generated_by_me/data_10k_1024d_100clusters.bin  (10K vectors, 100 clusters, ~39 MB)");
+    println!("  - generated_by_me/data_100k_1024d_100clusters.bin (100K vectors, 100 clusters, ~391 MB)");
     if generate_large {
-        println!("  - data_1m_1024d_1000clusters.bin  (1M vectors, 1000 clusters, ~3.9 GB)");
+        println!("  - generated_by_me/data_1m_1024d_1000clusters.bin  (1M vectors, 1000 clusters, ~3.9 GB)");
     }
-    println!("  - data_10k_1024d_random.bin       (10K vectors, uniform random, ~39 MB)");
+    println!("  - generated_by_me/data_10k_1024d_random.bin       (10K vectors, uniform random, ~39 MB)");
 }
 
 /// Generate vectors with Gaussian clusters

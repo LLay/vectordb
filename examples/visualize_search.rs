@@ -69,7 +69,7 @@ fn main() {
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
     
     // Load dataset
-    let dataset_file = "datasets/data_10k_1024d_100clusters.bin";
+    let dataset_file = "datasets/generated_by_me/data_10k_1024d_100clusters.bin";
     println!("Loading {}...", dataset_file);
     let (vectors, _dims) = load_vectors(dataset_file);
     println!("  ✓ Loaded {} vectors\n", vectors.len());

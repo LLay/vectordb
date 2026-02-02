@@ -153,42 +153,42 @@ Based on benchmark results from 1M vector dataset (1024 dimensions, clustered da
 ## Recommendations
 
 **For 100M vectors:**
-- ✅ Single machine is practical and cost-effective
-- ✅ Use `r7iz.8xlarge` for production
-- ✅ Sub-millisecond latency achievable
-- ✅ Build time reasonable (~1 hour)
+- Single machine is practical and cost-effective
+- Use `r7iz.8xlarge` for production
+- Sub-millisecond latency achievable
+- Build time reasonable (~1 hour)
 
 **For 1B vectors:**
-- ✅ Single machine still viable
-- ⚠️ Consider sharding for better latency
-- ⚠️ Build time becomes significant (~10 hours)
+- Single machine still viable
+- Consider sharding for better latency
+- Build time becomes significant (~10 hours)
 
 **For 10B+ vectors:**
-- ⚠️ Single machine possible but not recommended
-- ✅ Shard across multiple machines
-- ✅ Consider IVF or product quantization
-- ✅ Implement incremental building
+- Single machine possible but not recommended
+- Shard across multiple machines
+- Consider IVF or product quantization
+- Implement incremental building
 
 **For 100B+ vectors:**
-- ❌ Single machine not practical
-- ✅ Mandatory distributed architecture
-- ✅ Consider specialized vector DB (Pinecone, Weaviate, Qdrant)
-- ✅ Or build custom sharded solution
+- Single machine not practical
+- Mandatory distributed architecture
+- Consider specialized vector DB (Pinecone, Weaviate, Qdrant)
+- Or build custom sharded solution
 
 ## Architecture: Index in RAM, Vectors in S3
 
 This hybrid approach enables massive scale on single machines:
 
 **Pros:**
-- ✅ Index fits in RAM for fast tree traversal
-- ✅ Binary quantization enables fast filtering
-- ✅ Only fetch full vectors for top-k reranking
-- ✅ Minimal S3 reads (k × rerank_factor vectors)
+- Index fits in RAM for fast tree traversal
+- Binary quantization enables fast filtering
+- Only fetch full vectors for top-k reranking
+- Minimal S3 reads (k × rerank_factor vectors)
 
 **Cons:**
-- ⚠️ S3 latency adds overhead to queries
-- ⚠️ Requires fast S3 access (Express or mountpoint)
-- ⚠️ Network bandwidth becomes bottleneck
+- S3 latency adds overhead to queries
+- Requires fast S3 access (Express or mountpoint)
+- Network bandwidth becomes bottleneck
 
 **Optimization:**
 - Use S3 Express One Zone for single-digit ms latency

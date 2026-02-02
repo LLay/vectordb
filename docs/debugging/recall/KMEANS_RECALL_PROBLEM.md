@@ -62,7 +62,7 @@ Query Vector Q near cluster boundary:
 **With `probes=1`**: We only search Cluster 1
 - **Found**: Vectors in Cluster 1 (may not be truly nearest)
 - **Missed**: Q's actual nearest neighbor in Cluster 2!
-- **Recall**: LOW ❌
+- **Recall**: LOW
 
 **With `probes=2`**: We search both Cluster 1 and Cluster 2
 - **Found**: True nearest neighbor in Cluster 2
@@ -206,10 +206,10 @@ Recall is HIGH ✓
 
 | Data Distribution | K-Means Works? | Why? |
 |-------------------|----------------|------|
-| **Random/Uniform** | ❌ NO | No natural clusters, arbitrary boundaries, neighbors scattered |
-| **Clustered** (images, text) | ✅ YES | Natural groups, boundaries align with data, neighbors together |
-| **Multi-modal** (mixed topics) | ✅ YES | Clear separation, k-means finds modes |
-| **Gaussian mixture** | ✅ YES | K-means designed for this! |
+| **Random/Uniform** | NO | No natural clusters, arbitrary boundaries, neighbors scattered |
+| **Clustered** (images, text) | YES | Natural groups, boundaries align with data, neighbors together |
+| **Multi-modal** (mixed topics) | YES | Clear separation, k-means finds modes |
+| **Gaussian mixture** | YES | K-means designed for this! |
 
 ---
 

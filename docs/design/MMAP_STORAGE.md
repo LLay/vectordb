@@ -65,15 +65,15 @@ For 1M vectors with dimension 768:
 ### When to Use Mmap
 
 Use memory-mapped storage when:
-- ✅ You have limited RAM relative to dataset size
-- ✅ Your working set fits in available RAM (OS can cache hot vectors)
-- ✅ You can tolerate 10-50% query latency increase
-- ✅ You need to scale to larger datasets without buying more RAM
+- You have limited RAM relative to dataset size
+- Your working set fits in available RAM (OS can cache hot vectors)
+- You can tolerate 10-50% query latency increase
+- You need to scale to larger datasets without buying more RAM
 
 Don't use mmap when:
-- ❌ Query latency is critical and you have enough RAM
-- ❌ Dataset is very small (<100k vectors)
-- ❌ Working set is larger than available RAM (causes thrashing)
+- Query latency is critical and you have enough RAM
+- Dataset is very small (<100k vectors)
+- Working set is larger than available RAM (causes thrashing)
 
 ## Architecture
 

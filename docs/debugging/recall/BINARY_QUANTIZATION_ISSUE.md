@@ -12,10 +12,10 @@ User testing revealed that **binary quantization is too lossy** and filters out 
 
 | rerank_factor | Vectors Reranked | Recall@10 | Issue |
 |---------------|------------------|-----------|-------|
-| 3 (default)   | 30               | 30%       | ❌ Filtered out 70% of true neighbors |
-| 10            | 100              | 10%       | ❌ Even worse! |
-| 100           | 1,000            | 60%       | ⚠️ Still missing 40% |
-| 10000         | 100,000          | 100%      | ✅ Perfect (but no filtering) |
+| 3 (default)   | 30               | 30%       | Filtered out 70% of true neighbors |
+| 10            | 100              | 10%       | Even worse! |
+| 100           | 1,000            | 60%       | Still missing 40% |
+| 10000         | 100,000          | 100%      | Perfect (but no filtering) |
 
 ## Root Cause
 

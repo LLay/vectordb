@@ -57,7 +57,7 @@ enum VectorStorage {
 - `test_mmap_storage`: Full workflow (build → convert → query)
 - `test_mmap_storage_twice_fails`: Error handling
 
-All 26 tests pass ✅
+All 26 tests pass
 
 ### 4. Documentation
 
@@ -218,11 +218,11 @@ Potential improvements:
 ## Next Steps
 
 With memory-mapped storage implemented, the system now supports:
-- ✅ Binary quantization (32x compression)
-- ✅ Quantized tree navigation (fast traversal)
-- ✅ Parallel candidate filtering
-- ✅ Parallel reranking
-- ✅ Memory-mapped storage (RAM savings)
+- Binary quantization (32x compression)
+- Quantized tree navigation (fast traversal)
+- Parallel candidate filtering
+- Parallel reranking
+- Memory-mapped storage (RAM savings)
 
 Remaining optimizations for laptop performance:
 1. **LRU Caching**: Application-level cache of hot vectors

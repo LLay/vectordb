@@ -6,6 +6,8 @@ This directory contains tools for visualizing vector space and search behavior.
 
 ```bash
 # From the vectordb root directory, run:
+source .venv/bin/activate
+pip install -r requirements.txt
 cargo run --release --example observability_demo
 
 # This will automatically generate visualizations in this directory
@@ -24,25 +26,6 @@ cargo run --release --example observability_demo
 - **`tree_structure*.dot`** - Graphviz tree structures
 - **`tree_structure*.png`** - Rendered tree images
 
-## Manual Generation
-
-If you want to generate images manually:
-
-```bash
-cd examples/visualization
-
-# Install dependencies (one-time)
-pip3 install pandas matplotlib
-brew install graphviz  # or: sudo apt-get install graphviz
-
-# Generate images
-python3 visualize.py
-dot -Tpng tree_structure_turbopuffer_leaves.dot -o tree_structure.png
-
-# Open images
-open vector_space.png tree_structure.png
-```
-
 ## What the Visualizations Show
 
 ### Vector Space (vector_space.png)
@@ -53,8 +36,8 @@ open vector_space.png tree_structure.png
 - **Other vectors**: Gray dots (background)
 
 ### Tree Structure (tree_structure.png)
-- **Light green (bold)**: Searched leaves containing ground truth ✅
-- **Orange (bold)**: Missed leaves containing ground truth ❌
+- **Light green (bold)**: Searched leaves containing ground truth
+- **Orange (bold)**: Missed leaves containing ground truth
 - **Light blue**: Searched leaves without GT
 - **White**: Other leaves
 - **Light gray**: Internal nodes

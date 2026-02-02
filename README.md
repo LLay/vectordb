@@ -15,7 +15,7 @@ Inspired by turbopuffer's [approximate nearest neighbor](https://turbopuffer.com
 
 See [SCALING_GOALS.md](docs/goals/SCALING_GOALS.md) for more details.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Build the project
@@ -29,14 +29,11 @@ cargo run --release --example hierarchical_demo
 
 # Benchmark the index
 cargo run --release -- bench --num 10000 --branching 10
-
-# Run SIMD benchmarks
-cargo bench --bench distance_bench
 ```
 
-## 📊 Current Status
+## Current Status
 
-### ✅ Implemented
+### Done
 - **Scalar distance functions**: L2, dot product, cosine similarity
 - **Parallel batch distance computation** using Rayon
 - **Benchmarking infrastructure** with Criterion
@@ -48,7 +45,7 @@ cargo bench --bench distance_bench
 - **Two-phase search** Fast filtering with compressed binary vectors, precise ranking with full precision vectors
 - **Hierarchical clustering** with adaptive splitting based on cluster density 
 
-### 🚧 To Be Implemented
+### TODO
 - **Learned clustering** dynamically choosing cluster count, k-means iterations, and quantization thresholds
 - **RaBitQ** implementation for binary quantization
 - **Dimensionality reduction** before quantization
@@ -59,90 +56,48 @@ cargo bench --bench distance_bench
 - **Support vector insertion and deletion** Index updates. Implement [SPFresh](https://dl.acm.org/doi/10.1145/3600006.3613166) style index updates.
 - **Document arithmetic intensity** https://modal.com/gpu-glossary/perf/arithmetic-intensity
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 vectordb/
 ├── src/
-│   ├── lib.rs              # Library root
-│   ├── main.rs             # CLI entry point
-│   ├── distance/           # Distance calculation implementations
-│   │   ├── mod.rs
-│   │   └── scalar.rs       # Baseline scalar implementation
-│   ├── index/              # Index structures (TODO)
-│   ├── clustering/         # Clustering algorithms (TODO)
-│   └── storage/            # Storage backends (TODO)
-├── benches/
-│   └── distance_bench.rs   # Performance benchmarks
-├── tests/
-│   └── integration_tests.rs
-├── Cargo.toml
-└── .cargo/
-    └── config.toml         # Build configuration for native CPU optimizations
+│   ├── main.rs                   # CLI entry point
+│   ├── distance/                 # Distance metrics
+│   ├── index/                    # Index implementation    
+│   ├── clustering/               # Clustering algorithms
+│   ├── quantization/             # Quantization algorithms
+│   ├── storage/                  # Memory-mapped vector storage
+│   └── visualization.rs          # Search visualization tools
+├── benches/                      # Benchmark suite
+├── examples/
+│   ├── hierarchical_demo.rs      # Basic index demo
+│   ├── observability_demo.rs     # Full observability suite
+│   ├── visualize_search.rs       # Search visualization
+├── datasets/                     # Pre-generated test datasets
+└── Cargo.toml                    # Dependencies & build config
 ```
 
-## 💡 Usage Examples
-
-### Basic Distance Computation
-
-```rust
-use vectordb::{distance, DistanceMetric};
-
-let a = vec![1.0, 2.0, 3.0];
-let b = vec![4.0, 5.0, 6.0];
-
-// Compute L2 distance
-let l2_dist = distance(&a, &b, DistanceMetric::L2);
-
-// Compute cosine distance
-let cos_dist = distance(&a, &b, DistanceMetric::Cosine);
-
-// Compute dot product
-let dot_dist = distance(&a, &b, DistanceMetric::DotProduct);
-```
-
-### Batch Distance Computation
-
-```rust
-use vectordb::{batch_distances_parallel, DistanceMetric};
-
-let query = vec![1.0, 0.0, 0.0];
-let vectors = vec![
-    vec![1.0, 0.0, 0.0],
-    vec![0.0, 1.0, 0.0],
-    vec![0.0, 0.0, 1.0],
-];
-
-// Compute distances in parallel
-let results = batch_distances_parallel(&query, &vectors, DistanceMetric::L2);
-
-// results: Vec<(usize, f32)> - (index, distance) pairs
-```
-
-## 🔬 Running Benchmarks
+## Running Benchmarks
 
 ```bash
 # Run all benchmarks
 cargo bench
 
+# Run quick benchmarks (less accurate, faster)
+cargo bench -- --quick
+
 # Run specific benchmark
 cargo bench -- dot_product
 
-# Run L2 distance benchmarks
-cargo bench -- l2_squared
-
-# Run batch processing benchmarks
-cargo bench -- batch_distances
-
 # Generate comparison report
 cargo bench -- --save-baseline main
-# ... make changes ...
-cargo bench -- --baseline main
 ```
 
 Benchmark reports are generated in `target/criterion/` with HTML visualizations.
 
-## 🛠️ Development
+See more details in [benches/README.md](benches/README.md)
+
+## Development
 
 ### Building for Release
 
@@ -167,25 +122,9 @@ cargo test test_l2_squared
 cargo test -- --nocapture
 ```
 
-### Adding SIMD Support
+## Resources
 
-The project is configured to use native CPU features. For Apple Silicon (M1), this enables NEON SIMD instructions automatically when you implement them.
-
-To add NEON optimizations:
-
-1. Create `src/distance/simd_neon.rs`
-2. Use `#[cfg(target_arch = "aarch64")]` and ARM NEON intrinsics
-3. Add runtime detection with `std::arch::is_aarch64_feature_detected!()`
-4. Update `src/distance/mod.rs` to dispatch to NEON implementations
-
-## 📚 Learning Resources
-
-- [Getting Started Guide](../../thinking/vectordb-getting-started.md)
-- [Project Ideas](../../thinking/Turbopuffer%20project%20idea.md)
-- [Turbopuffer Architecture](https://turbopuffer.com/) (inspiration)
+- [Project Idea](docs/Turbopuffer%20project%20idea.md)
+- [Turbopuffer Architecture](https://turbopuffer.com/blog/ann-v3) (inspiration)
 - [ARM NEON Intrinsics Guide](https://developer.arm.com/architectures/instruction-sets/intrinsics/)
 
-
-## 📄 License
-
-MIT

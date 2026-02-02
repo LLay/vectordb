@@ -1,292 +1,360 @@
-# VectorDB System Design
+# CuddleDB System Design
 
-A high-performance vector similarity search engine for Apple Silicon (M1/M2/M3), achieving **1000-10000x** speedup over naive brute-force search.
-
-## Architecture Overview
+## Architecture Overview (Search Path)
 
 ```
-Query Vector (f32)
+Query Vector (1024-dim f32)
     ↓
-Binary Quantization (1 bit/dim)
+Binary Quantization (128 bytes)
     ↓
-Hierarchical Tree Search
-    Level 0: 10 root clusters      → Find 2 nearest (20 comparisons)
-    Level 1: 100 sub-clusters      → Find 4 nearest (40 comparisons)
-    Level N: Leaf nodes            → Collect candidates
+Hierarchical Tree Navigation
+    Level 0: ~100 root clusters      → Explore top N probes
+    Level 1: ~5K sub-clusters         → Expand best candidates
+    Level 2-N: Continue until leaves  → Collect leaf nodes
     ↓
-Binary Filtering (Hamming distance)
-    → Top k×rerank candidates
+Binary Filtering Phase
+    → Scan accumulated leaf vectors with Hamming distance
+    → Select top k×rerank candidates
     ↓
-Full Precision Reranking (Euclidean distance)
-    → Final top-k results
+Full Precision Reranking
+    → Load full vectors from mmap storage
+    → Compute L2 distance on candidates
+    → Return final top-k results
 ```
 
-## Core Technologies
+---
 
-### 1. ARM NEON SIMD Intrinsics
-**What:** Hardware-accelerated vector operations using 128-bit registers  
-**Performance:** **4-6x faster** than scalar code  
-**Impact:** Processes 4 floats simultaneously vs 1
+## Core Components
+
+### 1. Hierarchical Clustered Index
+
+**Implementation:** Adaptive multi-level k-means clustering
 
 ```rust
-// NEON processes 4 floats at once with FMA (fused multiply-add)
-let va = vld1q_f32(a.as_ptr());  // Load 4 floats
-let vb = vld1q_f32(b.as_ptr());  // Load 4 floats
-sum = vfmaq_f32(sum, va, vb);    // sum += va * vb (4 operations in 1!)
+pub struct ClusteredIndex {
+    nodes: Vec<ClusterNode>,           // Tree structure
+    root_ids: Vec<usize>,               // Level 0 entry points
+    quantizer: BinaryQuantizer,         // Compression
+    binary_vectors: Vec<BinaryVector>,  // Quantized vectors in RAM
+    full_vectors: MmapVectorStore,      // Full precision on disk
+}
 ```
 
-**Key optimizations:**
-- 4x loop unrolling with independent accumulators
-- Hides FMA latency (4 cycles) via instruction-level parallelism
-- Horizontal sum using `vaddvq_f32`
+**Key Features:**
+- **Adaptive splitting:** Clusters split until reaching target leaf size
+- **Unbalanced trees:** Different branches can have different depths
+- **Leaf accumulation:** Search collects all reachable leaves before scanning
 
-**Baseline:** 847ns dot product (1024-dim) → **~150-200ns with NEON**
+**Tree Building:**
+```rust
+ClusteredIndex::build(
+    vectors,
+    "vectors.bin",
+    branching_factor: 100,    // Clusters per level
+    target_leaf_size: 100,    // Vectors per leaf
+    metric: DistanceMetric::L2,
+    max_iterations: 20,       // K-means convergence
+)
+```
+
+**Example Tree Structure (1M vectors):**
+```
+Level 0: 100 root nodes
+Level 1: ~5,000 nodes (mostly internal)
+Level 2: ~6,000 nodes (mixed)
+Level 3: ~2,000 nodes (mostly leaves)
+Total:   ~13,500 nodes, ~10,800 leaves
+Max depth: 7 levels
+Avg leaf size: 92 vectors
+```
+
+**Why Hierarchical?**
+- O(log N) search vs O(N) flat scan
+- Natural pruning of search space
+- Scales to billions of vectors
+- Multi-probe allows recall/latency tuning
 
 ---
 
 ### 2. Binary Quantization
-**What:** Compress f32 vectors to 1 bit per dimension  
-**Performance:** **32x compression** + **10-100x faster distance**  
-**Impact:** 512-dim vector: 2KB → 64 bytes
 
+**Compression:** 4096 bytes (1024×f32) → 128 bytes (1024 bits)  
+**Ratio:** 32x compression  
+**Method:** Sign-based quantization with learned thresholds
+
+```rust
+pub struct BinaryQuantizer {
+    thresholds: Vec<f32>,  // One per dimension
+}
+
+// Quantization: v[i] >= threshold[i] → 1, else → 0
+pub struct BinaryVector {
+    data: Vec<u8>,  // Packed bits (1024 bits = 128 bytes)
+}
 ```
-Original:  [0.45, -0.23, 0.78, -0.91] (16 bytes)
-Quantized: [  1,     0,    1,     0 ] (4 bits = 0.5 bytes)
 
-Distance: Euclidean (slow) → Hamming (fast popcount)
-```
+**Distance Computation:**
+- **Binary:** Hamming distance (XOR + popcount) ~10ns
+- **Full precision:** L2 distance (NEON) ~200ns
+- **Speedup:** 20x faster filtering
 
-**Why it's fast:**
-- Hamming distance = XOR + popcount
-- NEON `vcnt` instruction counts bits in parallel
-- Fits more vectors in CPU cache (32x smaller)
-
-**Trade-off:** Slight accuracy loss, but recoverable with reranking
+**Why Binary?**
+- Fits more vectors in cache (32x smaller)
+- Fast distance computation (bitwise ops)
+- Enables two-phase search
+- Minimal accuracy loss with reranking
 
 ---
 
-### 3. Hierarchical Clustering (SPFresh-style)
-**What:** Multi-level tree structure for progressive search space reduction  
-**Performance:** **O(log N) search** vs O(N) flat scan  
-**Impact:** 10K vectors: 10,000 comparisons → **60 comparisons** (166x reduction)
+### 3. Memory-Mapped Storage
 
-```
-Example: 10,000 vectors, branching factor = 10
+**Purpose:** Keep full-precision vectors on disk, access on-demand
 
-Level 0 (root):     10 clusters
-Level 1:           100 clusters (10²)
-Level 2 (leaf):  1,000 clusters (10³) → vectors stored here
-
-Search path (probes=2):
-  L0: Check 10 centroids  → Keep top 2
-  L1: Check 20 centroids  → Keep top 4
-  L2: Check 40 leaf nodes → Collect candidates
-  Total: 70 comparisons vs 10,000!
+```rust
+pub struct MmapVectorStore {
+    mmap: Mmap,              // Memory-mapped file
+    num_vectors: usize,
+    dimension: usize,
+}
 ```
 
-**Adaptive splitting:** Nodes continue splitting until cluster size ≤ `max_leaf_size`
-- **Handles non-uniform distributions:** Dense regions split deeper, sparse regions remain shallow
-- **Controlled leaf size:** Ensures no leaf has > `max_leaf_size` vectors
-- **Exception: Safety valve:** Max depth of 15 prevents infinite recursion
+**Memory Layout (1M vectors, 1024-dim):**
+```
+RAM:
+  Binary vectors:    128 MB  (1M × 128 bytes)
+  Tree structure:     50 MB  (nodes + metadata)
+  Overhead:           20 MB  (allocator, etc.)
+  Total in RAM:     ~200 MB
 
-This approach is similar to:
-- Quad-trees/Octrees - split based on spatial density
-- Turbopuffer's SPFresh - adaptive cluster sizing ([paper](https://dl.acm.org/doi/10.1145/3600006.3613166))
-- FAISS IVF with size limits
+Disk (memory-mapped):
+  Full vectors:     3.9 GB  (1M × 1024 × 4 bytes)
+```
 
-**Benefits for non-uniform data:**
-- Prevents large leaf nodes that degrade search performance
-- Dense clusters automatically get deeper trees
-- Sparse clusters don't waste memory with unnecessary splits
-- Maintains O(log N) performance even with skewed distributions
+**Benefits:**
+- Only hot vectors cached by OS (typically 10-20%)
+- Scales beyond available RAM
+- No manual cache management
+- Fast sequential/clustered access
+
+**Trade-off:** ~10-20% latency increase vs all-in-RAM
 
 ---
 
-### 4. Two-Phase Search
-**What:** Fast filtering with binary, precise ranking with full precision  
-**Performance:** **Best of both worlds** - speed + accuracy  
-**Impact:** Only recompute expensive distances for top candidates
+### 4. ARM NEON SIMD
 
-```
-Phase 1: Binary Filtering (fast)
-  - Hamming distance on all candidates
-  - Select top k×rerank (e.g., 10×3 = 30 vectors)
-  Cost: N × (cheap Hamming)
+**Hardware Acceleration:** 128-bit vector operations on Apple Silicon
 
-Phase 2: Full Precision Reranking (precise)
-  - Euclidean distance on 30 candidates
-  - Return top 10
-  Cost: 30 × (expensive Euclidean)
+**Key Operations:**
+```rust
+// Dot product (4 floats at once)
+let va = vld1q_f32(a.as_ptr());
+let vb = vld1q_f32(b.as_ptr());
+sum = vfmaq_f32(sum, va, vb);  // Fused multiply-add
 
-Total: Much faster than 10,000 × Euclidean!
+// Hamming distance (popcount)
+let xor = veorq_u8(a, b);
+let count = vcntq_u8(xor);
 ```
 
-**Rerank factor:** Controls speed/accuracy trade-off
-- `rerank=2`: Faster, ~95% accuracy
-- `rerank=5`: Slower, ~99% accuracy
+**Performance:**
+- L2 distance (1024-dim): ~200ns
+- Dot product (1024-dim): ~150ns
+- Hamming distance (1024-bit): ~10ns
+
+**Optimizations:**
+- 4x loop unrolling with independent accumulators
+- Hides FMA latency (4 cycles) via ILP
+- Cache-friendly memory access patterns
 
 ---
 
-## Performance Breakdown
+### 5. Two-Phase Search
 
-### Cumulative Speedup (1024-dim vectors, 10K dataset)
-
-| Optimization | Speedup | Cumulative | Cost per Query |
-|--------------|---------|------------|----------------|
-| **Baseline (naive)** | 1x | 1x | 10,000 × 847ns = **8.47ms** |
-| **+ NEON SIMD** | 5x | 5x | 10,000 × 170ns = 1.70ms |
-| **+ Binary Quant** | 20x | 100x | 10,000 × 8.5ns = 85µs |
-| **+ Hierarchical** | 166x | 16,600x | 60 × 8.5ns = **0.5µs** |
-| **+ Two-Phase** | 2x | 33,200x | 60 Hamming + 30 rerank = **0.25µs** |
-
-**Final:** ~0.25µs per query vs 8.47ms naive = **33,880x faster!**
-
----
-
-## Memory Efficiency
-
-### Storage (10,000 vectors × 1024-dim)
+**Strategy:** Fast binary filtering + precise full-precision reranking
 
 ```
-Full precision only:     10K × 1024 × 4 bytes  = 40.96 MB
-Binary only:             10K × 1024 × 1 bit    =  1.28 MB (32x smaller)
-Binary + Full (hybrid):  1.28 MB + 40.96 MB    = 42.24 MB
+Phase 1: Binary Filtering
+  Input:  All vectors in searched leaves
+  Method: Hamming distance on binary vectors
+  Output: Top k×rerank_factor candidates
+  Cost:   O(candidates) × 10ns
 
-Binary adds: +3% memory for 100x+ speed boost
+Phase 2: Full Precision Reranking
+  Input:  Top k×rerank_factor candidates
+  Method: L2 distance on full vectors (from mmap)
+  Output: Final top-k results
+  Cost:   O(k×rerank_factor) × 200ns
 ```
 
-### Cache Efficiency
-
-- **Binary centroids**: Fit entirely in L2/L3 cache
-- **Binary vectors**: More vectors per cache line
-- **NEON**: Optimized memory access patterns
-- **Hierarchical**: Only loads relevant clusters
-
----
-
-## Scalability
-
-### Search Complexity
-
-| Dataset Size | Naive | Hierarchical | Reduction |
-|--------------|-------|--------------|-----------|
-| 1K vectors   | 1,000 | ~30 | 33x |
-| 10K vectors  | 10,000 | ~60 | 166x |
-| 100K vectors | 100,000 | ~80 | 1,250x |
-| 1M vectors   | 1,000,000 | ~100 | 10,000x |
-
-**Growth:** Naive = O(N), Hierarchical = O(log N)
-
-### Parallel Scaling
-
-- K-means: Parallel via Rayon
-- Binary quantization: Parallel batch conversion
-- NEON: 4-way SIMD parallelism
-- Multi-core: Can shard across machines
-
----
-
-## Key Design Decisions
-
-### 1. Why ARM NEON over scalar?
-- **4-6x speedup** for minimal complexity
-- Native to M1/M2/M3 (always available)
-- No runtime CPU detection needed
-- FMA instruction hides latency
-
-### 2. Why binary quantization?
-- **32x compression** enables cache-resident search
-- **Hamming distance** via fast popcount
-- **Two-phase search** recovers accuracy
-- Minimal accuracy loss (~1-5%)
-
-### 3. Why hierarchical over flat?
-- **O(log N) vs O(N)** - essential for scale
-- **Progressive narrowing** - natural fit for clustering
-- **Configurable branching** - tune for dataset
-- **Multi-probe** - accuracy/speed trade-off
-
-### 4. Why O(1) lookup table?
-- **100x faster** reranking
-- **Trivial memory cost** (already storing vectors)
-- **Simple implementation** - just array indexing
-- Eliminates nested loop bottleneck
-
----
-
-## Comparison to Production Systems
-
-| Technique | VectorDB | Pinecone | Weaviate | Turbopuffer |
-|-----------|----------|----------|----------|-------------|
-| SIMD | ✅ NEON | ✅ AVX512 | ✅ AVX2 | ✅ AVX512 |
-| Quantization | ✅ Binary | ✅ PQ | ✅ PQ | ✅ RaBitQ |
-| Hierarchical | ✅ Tree | ✅ Graph | ✅ HNSW | ✅ SPFresh |
-| Two-phase | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-
-**Key difference:** VectorDB optimized for Apple Silicon, others for x86_64.
-
----
-
-## Future Optimizations
-
-### Potential additions (not yet implemented):
-1. **Product Quantization (PQ)** - 2-4 bit encoding (better than binary)
-2. **Memory-mapped files** - Disk-backed storage for massive datasets
-3. **Distributed sharding** - Scale across multiple machines
-4. **GPU acceleration** - Offload batch operations
-5. **Learned quantization** - Neural network-based encoding
-
-### Estimated improvements:
-- PQ: 2-3x better recall than binary
-- Memory-mapped: Support 100M+ vectors on laptop
-- Distributed: Linear scaling to billions of vectors
-
----
-
-## Benchmark Results (M1 Pro)
-
-### Hardware
-- **CPU:** Apple M1 Pro (10 cores)
-- **RAM:** 16GB unified memory
-- **Architecture:** ARM64 with NEON
-
-### Results (10K vectors, 1024-dim)
-
+**Example (k=10, rerank_factor=3):**
 ```
-Metric               | Value
----------------------|----------
-Build time           | 2.3s
-Index size           | 42 MB
-Queries per second   | 400,000+ QPS
-Avg query latency    | 2.5 µs
-p99 latency          | 5 µs
-Recall@10            | 98%+
+1000 vectors in leaves → 1000 Hamming comparisons = 10μs
+Top 30 candidates → 30 L2 comparisons = 6μs
+Total: 16μs vs 200μs all-L2
 ```
 
-### Scalability Test
+**Why It Works:**
+- Binary filtering is very fast but lossy
+- Reranking recovers accuracy on small candidate set
+- Net speedup while maintaining recall
+
+---
+
+## Search Algorithm
+
+```rust
+pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usize) -> Vec<(usize, f32)> {
+    // 1. Quantize query
+    let query_binary = self.quantizer.quantize(query);
+    
+    // 2. Navigate tree, accumulating leaves
+    let mut current_nodes = self.root_ids.clone();
+    let mut accumulated_leaves = Vec::new();
+    
+    while !current_nodes.is_empty() {
+        // Find top probes closest to query
+        let top_nodes = self.find_closest_nodes(&current_nodes, &query_binary, probes);
+        
+        // Separate leaves from internal nodes
+        let (leaves, internal): (Vec<_>, Vec<_>) = top_nodes
+            .into_iter()
+            .partition(|&id| self.nodes[id].children.is_empty());
+        
+        accumulated_leaves.extend(leaves);
+        
+        // Expand internal nodes
+        current_nodes = internal
+            .iter()
+            .flat_map(|&id| self.nodes[id].children.clone())
+            .collect();
+    }
+    
+    // 3. Binary scan all accumulated leaf vectors
+    let mut candidates = Vec::new();
+    for &leaf_id in &accumulated_leaves {
+        for &vector_idx in &self.nodes[leaf_id].vector_indices {
+            let dist = hamming_distance(&query_binary, &self.binary_vectors[vector_idx]);
+            candidates.push((vector_idx, dist));
+        }
+    }
+    
+    // 4. Select top k×rerank_factor by Hamming distance
+    candidates.sort_by(|a, b| a.1.cmp(&b.1));
+    candidates.truncate(k * rerank_factor);
+    
+    // 5. Rerank with full precision
+    let mut results: Vec<_> = candidates
+        .iter()
+        .map(|&(idx, _)| {
+            let full_vec = self.full_vectors.get_vector(idx);
+            let dist = distance(query, full_vec, self.metric);
+            (idx, dist)
+        })
+        .collect();
+    
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    results.truncate(k);
+    results
+}
+```
+
+**Key Innovation:** Leaf accumulation handles unbalanced trees  (different branches can reach leaves at different depths).
+
+
+---
+
+## Tuning Parameters
+
+### Index Building
+
+**branching_factor** (10-100)
+- Higher → shallower tree, faster build, slower search
+- Lower → deeper tree, slower build, faster search
+- Recommended: 50-100 for large datasets
+
+**target_leaf_size** (50-200)
+- Higher → fewer leaves, more vectors per leaf
+- Lower → more leaves, fewer vectors per leaf
+- Recommended: 100
+
+**max_iterations** (10-30)
+- K-means convergence limit
+- Higher → better clustering, slower build
+- Recommended: 20
+
+### Search
+
+**probes** (1-10)
+- Branches explored at each level
+- Higher → better recall, slower search
+- Recommended: 3-7
+
+**rerank_factor** (2-10)
+- Multiplier for binary candidates
+- Higher → better accuracy, more reranking cost
+- Recommended: 3-5
+
+**k** (1-1000)
+- Number of results to return
+- Higher k → more work in both phases
+- Recommended: 10-100
+
+### Trade-offs
 
 ```
-Vectors  | Build  | Query  | Memory
----------|--------|--------|--------
-1K       | 0.2s   | 1.0 µs | 4.2 MB
-10K      | 2.3s   | 2.5 µs | 42 MB
-100K     | 28s    | 4.0 µs | 420 MB
+Speed-focused:     probes=2, rerank_factor=2
+Balanced:          probes=5, rerank_factor=3
+Accuracy-focused:  probes=10, rerank_factor=5
 ```
 
 ---
 
-## Summary
+## Design Decisions
 
-**VectorDB achieves production-grade performance through:**
+### Why Hierarchical over Flat (IVF)?
 
-1. **NEON SIMD** - Hardware-accelerated compute (5x)
-2. **Binary quantization** - Extreme compression + fast distance (100x)
-3. **Hierarchical clustering** - Logarithmic search (166x)
-4. **Two-phase search** - Accuracy recovery (2x)
-5. **Optimized data structures** - O(1) lookups (100x)
+**Pros:**
+- O(log N) vs O(N) probe cost
+- Scales to billions without probe explosion
+- Natural for multi-modal distributions
 
-**Combined result:** 1000-10000x faster than naive implementation while maintaining 95-99% accuracy.
+**Cons:**
+- More complex implementation
+- Harder to tune for random data
+- Lower recall on uniform distributions
 
-**Total lines of code:** ~2,000 (Rust)  
-**External dependencies:** Minimal (Rayon, ndarray, rand)  
-**Platform:** Apple Silicon (M1/M2/M3)
+
+### Why Binary over Product Quantization?
+
+**Pros:**
+- Simpler implementation
+- Faster distance (bitwise ops)
+- Less training data needed
+
+**Cons:**
+- Lower compression (1 bit vs 4-8 bits)
+- Less accurate approximation
+
+
+### Why Memory-Mapped over All-in-RAM?
+
+**Pros:**
+- Scales beyond available RAM
+- OS handles caching automatically
+- Hot vectors naturally cached
+
+**Cons:**
+- 10-20% latency increase
+- Requires fast storage
+
+
+### Why NEON over Scalar?
+
+**Pros:**
+- 4-6x speedup
+- Native to Apple Silicon
+- No runtime detection needed
+
+**Cons:**
+- x86 requires separate AVX/AVX512 impl
+- More complex code

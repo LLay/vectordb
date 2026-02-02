@@ -2,6 +2,14 @@
 
 Pre-generated vector datasets for testing and benchmarking are stored in the `datasets/` directory.
 
+## Generating Datasets
+
+To regenerate all datasets:
+
+```bash
+cargo run --release --example generate_datasets
+```
+
 ## Available Datasets
 
 ### Clustered Datasets (Gaussian Distribution)
@@ -23,14 +31,6 @@ Binary format with little-endian encoding:
 
 ```
 [num_vectors: u32][dims: u32][vector1_f32...][vector2_f32...]...
-```
-
-## Generating Datasets
-
-To regenerate all datasets:
-
-```bash
-cargo run --release --example generate_datasets
 ```
 
 ## Why Clustered Data?
@@ -89,14 +89,4 @@ fn load_vectors(filename: &str) -> (Vec<Vec<f32>>, usize) {
 
 - **`observability_demo.rs`** - Automatically loads `datasets/data_10k_1024d_100clusters.bin` if available
 - **`inspect_dataset.rs`** - Inspects dataset statistics and checks for data quality issues
-
-## Directory Structure
-
-```
-vectordb/
-├── datasets/           # Vector datasets (*.bin files)
-├── examples/          # Example code
-├── src/               # Library source
-└── ...
-```
 

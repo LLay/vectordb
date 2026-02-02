@@ -2,20 +2,35 @@
 
 Comprehensive benchmark suite for measuring VectorDB performance using [Criterion.rs](https://github.com/bheisler/criterion.rs).
 
+---
+
+## Quick Reference
+
+### For Daily Development (< 10 seconds)
+```bash
+cargo run --release --example quick_recall_check
+```
+
+### For Fast Iteration (< 2 minutes)
+```bash
+cargo bench --bench speed_fast    # ~70s - latency only
+cargo bench --bench recall_fast   # ~30s - recall + latency
+```
+
+### For Production Validation (2-10 minutes)
+```bash
+cargo bench --bench recall_proper      # ~3m - comprehensive recall
+cargo bench --bench tune_tree_params   # ~5m - find optimal params
+cargo bench --bench profile_bench      # ~10m - full profiling with 1M vectors
+```
+
+---
+
 ## Running Benchmarks
 
 ### Run all benchmarks
 ```bash
 cargo bench
-```
-
-### Run specific benchmark suite
-```bash
-cargo bench --bench distance_bench
-cargo bench --bench quantization_bench
-cargo bench --bench clustering_bench
-cargo bench --bench index_bench
-cargo bench --bench e2e_bench
 ```
 
 ### Quick benchmarks (less accurate, faster)
@@ -29,9 +44,30 @@ cargo bench --bench distance_bench -- dot_product
 cargo bench --bench index_bench -- search_varying_k
 ```
 
+### View results
+```bash
+open target/criterion/report/index.html
+```
+
+---
+
+## Available Benchmarks
+
+| Name | Type | Time | Dataset | Purpose |
+|------|------|------|---------|---------|
+| `quick_recall_check` | Example | 8s | 1K×128d | Quick sanity check |
+| `speed_fast` | Bench | 70s | 5K×128d | Fast latency measurement |
+| `recall_fast` | Bench | 30s | 2K×128d | Fast recall testing |
+| `recall_proper` | Bench | 3m | 10K×256d | Comprehensive recall |
+| `tune_tree_params` | Bench | 5m | 10K×256d | Parameter optimization |
+| `profile_bench` | Bench | 10m | 1M×1024d | Production profiling |
+| `recall_bench` | Bench | 5m | 50K×512d | Original recall benchmark |
+
+---
+
 ## Benchmark Suites
 
-### 1. `distance_bench.rs` - Low-Level SIMD Operations
+### 1. `distance_bench.rs` - Low-Level SIMD Operations (Fast, ~30s)
 **What it measures:** Core distance computation performance
 
 - **`dot_product`**: NEON-optimized dot product across various dimensions (128-2048)
@@ -42,9 +78,13 @@ cargo bench --bench index_bench -- search_varying_k
 
 **Use case:** Validate SIMD optimizations, ensure memory bandwidth utilization
 
+**Performance targets:**
+- Dot product 1024-dim should be < 20ns (~4x SIMD speedup)
+- Throughput near 100-120 GiB/s = good memory utilization
+
 ---
 
-### 2. `quantization_bench.rs` - Compression Performance
+### 2. `quantization_bench.rs` - Compression Performance (Medium, ~5-10min)
 **What it measures:** Binary quantization (f32 → 1-bit) performance
 
 - **`quantize_single`**: Single vector quantization across dimensions
@@ -58,9 +98,29 @@ cargo bench --bench index_bench -- search_varying_k
 
 **Use case:** Measure 32x compression impact, validate memory savings
 
+**Performance targets:**
+- Single vector < 2μs for 1024-dim
+- Hamming distance < 10ns for 1024-bit
+- Parallel should be 4-8x faster than sequential
+
+**Sample Results:**
+```
+quantize_single/1024    time:   [1.10 µs 1.13 µs 1.17 µs]
+                        thrpt:  [3.27 GiB/s 3.39 GiB/s 3.48 GiB/s]
+
+quantize_batch_sequential/10000
+                        time:   [44.75 ms 44.83 ms 44.95 ms]
+                        thrpt:  [222.49 Kelem/s 223.05 Kelem/s 223.46 Kelem/s]
+```
+
+**Analysis:**
+- Single 1024-dim vector: ~1.1μs to quantize (32x compression)
+- Batch of 10K vectors: ~45ms (222K vectors/sec throughput)
+- Throughput: ~3.3 GiB/s input processing rate
+
 ---
 
-### 3. `clustering_bench.rs` - K-Means Performance
+### 3. `clustering_bench.rs` - K-Means Performance (Slow, ~10-15min)
 **What it measures:** Clustering algorithm performance for index building
 
 - **`kmeans_init_plusplus`**: k-means++ initialization for various k values
@@ -76,7 +136,7 @@ cargo bench --bench index_bench -- search_varying_k
 
 ---
 
-### 4. `index_bench.rs` - Index Operations
+### 4. `index_bench.rs` - Hierarchical Index (Very Slow, ~15-20min)
 **What it measures:** Hierarchical clustered index performance
 
 - **`index_build`**: Index construction time (1K-50K vectors)
@@ -89,9 +149,14 @@ cargo bench --bench index_bench -- search_varying_k
 
 **Use case:** Tune index parameters (branching, max_leaf, probes, rerank)
 
+**Performance targets:**
+- Build 10K vectors in < 2 seconds
+- Search latency < 100μs for k=10
+- Probes=2 should be ~2x slower than probes=1
+
 ---
 
-### 5. `e2e_bench.rs` - End-to-End Workflows
+### 5. `e2e_bench.rs` - End-to-End Workflows (Slow, ~10-15min)
 **What it measures:** Real-world usage patterns
 
 - **`e2e_full_pipeline`**: Build index + search (full workflow)
@@ -133,6 +198,64 @@ change:
 - **p < 0.05**: Statistically significant change
 - **p > 0.05**: Within noise, no real change
 
+### Example Outputs
+
+#### quick_recall_check (8 seconds)
+```
+Config          Recall@10    Latency(μs)  Build(ms)
+-------------------------------------------------------
+default         15.0%        45.2         5
+tuned           23.0%        108.7        7
+high_recall     25.0%        133.4        9
+```
+
+#### speed_fast (70 seconds)
+```
+speed_fast/low_latency     time: [21.7 μs 21.7 μs 21.8 μs]
+speed_fast/balanced        time: [90.4 μs 91.6 μs 92.9 μs]
+speed_fast/high_recall     time: [104.1 μs 104.6 μs 105.1 μs]
+speed_fast/thorough        time: [108.8 μs 110.2 μs 112.3 μs]
+```
+
+#### recall_proper (3 minutes)
+```
+--- Scenario: In-Dataset ---
+p1_r2          11.5%        27.2μs
+p2_r3          13.0%        108.1μs
+p3_r5          13.6%        119.3μs
+
+--- Scenario: Random ---
+p1_r2          1.0%         27.2μs
+p5_r5          5.1%         160.7μs
+```
+
+---
+
+## Performance Tuning Parameters
+
+### Index Parameters (index_bench)
+- **branching_factor**: More = faster build, slower search
+  - Recommended: 10-20
+- **max_leaf_size**: Larger = fewer levels, more leaf scanning
+  - Recommended: 100-200
+- **probes_per_level**: More = better recall, slower
+  - Recommended: 2-5
+- **rerank_factor**: Multiplier for precision phase
+  - Recommended: 3-5
+
+### K-Means Parameters (clustering_bench)
+- **k**: Number of clusters per level
+  - Same as branching_factor typically
+- **max_iterations**: Convergence limit
+  - Recommended: 10-20
+
+### Quantization Strategy (e2e_bench)
+- **Mixed precision**: Binary scan + full precision rerank
+  - Best balance of speed and accuracy
+- **Pure binary**: Fastest, lower recall
+- **No quantization**: Highest recall, slowest
+
+
 ---
 
 ## Benchmark Reports
@@ -151,44 +274,43 @@ Reports include:
 
 ---
 
-## Tips
-
-### Fast Iteration
-```bash
-# Quick check (less accurate)
-cargo bench --bench distance_bench -- --quick
-
-# Single benchmark
 cargo bench --bench index_bench -- search_varying_k/10
-```
 
-### CI/CD Integration
+## Troubleshooting
+
+### Benchmarks Take Too Long
 ```bash
-# Save baseline
-cargo bench -- --save-baseline main
-
-# Compare against baseline
-cargo bench -- --baseline main
+# Use --quick for faster (less accurate) results
+cargo bench --bench distance_bench -- --quick
 ```
 
-### Profile Hot Paths
-```bash
-# Generate flamegraphs (requires cargo-flamegraph)
-cargo flamegraph --bench distance_bench -- --bench
+### High Variance in Results
+- Close other applications
+- Disable CPU frequency scaling
+- Run on battery power (for laptops - consistent power)
+- Increase sample size (edit benchmark code)
+
+### Memory Issues
+For large benchmarks (100K+ vectors):
+```rust
+group.sample_size(10); // Reduce samples
 ```
 
----
 
-## Key Performance Targets
 
-| Operation | Target | Notes |
-|-----------|--------|-------|
-| Dot product (1024-dim) | < 20ns | ~4x SIMD speedup |
-| L2 distance (1024-dim) | < 30ns | Memory bandwidth bound |
-| Hamming distance (1024-bit) | < 10ns | NEON popcount |
-| Index search (10K vectors) | < 100μs | k=10, probes=2 |
-| Build index (10K vectors) | < 2s | 1024-dim |
-| Quantize batch (10K vectors) | < 50ms | Parallel |
+## Interpreting Results for Optimization
+
+### Memory Bandwidth Bound
+If throughput plateaus ~100-120 GiB/s → hitting DRAM bandwidth limit (M1/M2)
+
+### CPU Bound
+If throughput scales with vector dimension → CPU computation dominant
+
+### Cache Effects
+Test with increasing data sizes to find L1/L2/L3 cache limits
+
+### SIMD Efficiency
+Compare scalar vs NEON → should see 4x speedup for f32 operations
 
 ---
 
@@ -214,16 +336,33 @@ criterion_main!(benches);
 
 ---
 
-## Interpreting Results for Optimization
+## Advanced: Custom Metrics
 
-### Memory Bandwidth Bound
-If throughput plateaus ~100-120 GiB/s → hitting DRAM bandwidth limit (M1/M2)
+### Memory Profiling
+```bash
+# Requires cargo-instrument
+cargo install cargo-instruments
+cargo instruments --bench index_bench --template Allocations
+```
 
-### CPU Bound
-If throughput scales with vector dimension → CPU computation dominant
+### Flamegraphs
+```bash
+cargo install flamegraph
+cargo flamegraph --bench distance_bench -- --bench
+```
 
-### Cache Effects
-Test with increasing data sizes to find L1/L2/L3 cache limits
+---
 
-### SIMD Efficiency
-Compare scalar (removed) vs NEON → should see 4x speedup for f32 operations
+## Current Performance (as of latest run)
+
+### Speed (5K vectors, 128d)
+- Low latency: **21.7μs**
+- Balanced: **91.6μs**
+- High recall: **104.6μs**
+
+### Recall (1K vectors, in-dataset)
+- Default (p=2,r=3): **15%**
+- Tuned (p=3,r=3): **23%**
+- High recall (p=5,r=3): **25%**
+
+**Note:** Low recall is due to default parameters. See recall documentation for tuning guidance.

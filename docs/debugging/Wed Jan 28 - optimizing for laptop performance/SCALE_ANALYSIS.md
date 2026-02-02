@@ -17,23 +17,23 @@
 - Per vector: 1024 dims × 4 bytes = **4 KB**
 - 100B vectors: 100,000,000,000 × 4 KB = **400 TB**
 
-❌ **Impossible** - You'd need 400 enterprise SSDs
+**Impossible** - You'd need 400 enterprise SSDs
 
 #### With 32x Binary Quantization
 - Per vector: 1024 dims ÷ 8 bits = **128 bytes**
 - 100B vectors: 100,000,000,000 × 128 bytes = **12.8 TB**
 
-❌ **Still impossible** - Would need 13-14 enterprise SSDs
+**Still impossible** - Would need 13-14 enterprise SSDs
 
 #### What About Smaller Dimensions?
 
 | Dimensions | f32 Size | Quantized Size | 100B Vectors (Quantized) |
 |------------|----------|----------------|--------------------------|
-| 128        | 512 B    | 16 B           | **1.6 TB** ✅ (possible!) |
-| 256        | 1 KB     | 32 B           | **3.2 TB** ❌ |
-| 512        | 2 KB     | 64 B           | **6.4 TB** ❌ |
-| 768        | 3 KB     | 96 B           | **9.6 TB** ❌ |
-| 1024       | 4 KB     | 128 B          | **12.8 TB** ❌ |
+| 128        | 512 B    | 16 B           | **1.6 TB** (possible!) |
+| 256        | 1 KB     | 32 B           | **3.2 TB** |
+| 512        | 2 KB     | 64 B           | **6.4 TB** |
+| 768        | 3 KB     | 96 B           | **9.6 TB** |
+| 1024       | 4 KB     | 128 B          | **12.8 TB** |
 
 **Conclusion:** Only 128-dimensional vectors with quantization can fit 100B vectors on multi-TB storage.
 
@@ -64,13 +64,13 @@ With your adaptive clustering index (branching=10, max_leaf=150):
 - Per centroid: 1024 × 4 bytes = 4 KB
 - Total: 111M × 4 KB = **444 GB**
 
-❌ **28x larger than your RAM!**
+**28x larger than your RAM!**
 
 **Memory for centroids (128-dim):**
 - Per centroid: 128 × 4 bytes = 512 bytes
 - Total: 111M × 512 B = **56.8 GB**
 
-❌ **Still 3.5x larger than your RAM!**
+**Still 3.5x larger than your RAM!**
 
 ---
 
@@ -92,7 +92,7 @@ With your adaptive clustering index (branching=10, max_leaf=150):
 - **Queries per second:** 1,000-5,000 QPS
 - **Build time:** 10-60 seconds
 
-✅ **This is practical and fast!**
+**This is practical and fast!**
 
 ---
 
@@ -119,7 +119,7 @@ With 280GB available storage:
 - **SSD reads per query:** ~150-500 (with probes=2, leaf_size=150)
 - **Throughput:** 100-500 QPS
 
-✅ **This approaches your 100ms p99 goal for ~1 billion vectors!**
+**This approaches your 100ms p99 goal for ~1 billion vectors!**
 
 ---
 
@@ -181,7 +181,7 @@ You can handle:
 - **~1 billion vectors** comfortably
 - **Up to 5 billion vectors** with tuning (higher probes, better caching)
 
-✅ **Yes, 100ms p99 is achievable for 1-5B vectors on your laptop!**
+**Yes, 100ms p99 is achievable for 1-5B vectors on your laptop!**
 
 ---
 
@@ -236,7 +236,7 @@ rerank_factor: 3
 - Build time: ~30-60 minutes
 - RAM usage: 12-14 GB (index + working set)
 - Query latency (median): 2-5ms
-- Query latency (p99): 20-50ms ✅
+- Query latency (p99): 20-50ms
 - Throughput: 200-500 QPS
 
 **This is production-ready for a laptop-scale vector DB!**
@@ -247,10 +247,10 @@ rerank_factor: 3
 
 | Scale | Feasible? | Configuration | Expected Latency |
 |-------|-----------|---------------|------------------|
-| **100M vectors** | ✅ Excellent | Fully in-memory | 0.5-2ms (p99) |
-| **1B vectors** | ✅ Yes | Disk-backed, 512-dim | 20-50ms (p99) |
-| **5B vectors** | ⚠️ Possible | 128-dim, optimized | 50-150ms (p99) |
-| **100B vectors** | ❌ No | Need distributed system | N/A |
+| **100M vectors** | Excellent | Fully in-memory | 0.5-2ms (p99) |
+| **1B vectors** | Yes | Disk-backed, 512-dim | 20-50ms (p99) |
+| **5B vectors** | Possible | 128-dim, optimized | 50-150ms (p99) |
+| **100B vectors** | No | Need distributed system | N/A |
 
 **Your 100ms p99 goal is achievable for up to ~2 billion vectors on your laptop with the right optimizations!**
 

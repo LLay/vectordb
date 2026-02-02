@@ -187,7 +187,7 @@ cargo instruments --release --bench index_bench --template Time
 | Same code | 0.3ms | 0.8ms | Just better hardware! |
 | + All optimizations | 0.2ms | 0.5ms | Production ready |
 
-**Total time investment: ~8-12 hours for 5x laptop speedup + future scalability** ✅
+**Total time investment: ~8-12 hours for 5x laptop speedup + future scalability**
 
 ---
 
@@ -346,7 +346,7 @@ cargo test --release
 cargo bench --bench index_bench
 ```
 
-**You're now 2-3x faster!** 🎉
+**You're now 2-3x faster!**
 
 ---
 
@@ -409,11 +409,11 @@ Track these after each optimization:
 
 ## Next Steps
 
-1. ☑️ Read `SPEED_OPTIMIZATION.md` for detailed rationale
-2. ⬜ Implement Priority 1 (2-3 hours)
-3. ⬜ Verify latency improved
-4. ⬜ Continue with Priority 2
-5. ⬜ Test on different hardware configs
-6. ⬜ Celebrate scalable architecture! 🎉
+1. Read `SPEED_OPTIMIZATION.md` for detailed rationale
+2. Implement Priority 1 (2-3 hours)
+3. Verify latency improved
+4. Continue with Priority 2
+5. Test on different hardware configs
+6. Celebrate scalable architecture!
 
 **Start now → Get to 2-3ms on laptop, <1ms on server with same code!**

@@ -207,8 +207,8 @@ Potential improvements:
 
 ## Checklist Update
 
-✅ **2.1** Parallelize candidate leaf scanning - DONE
-✅ **2.2** Parallel quantized distance computation - DONE  
-⏭️ **2.3** Tune probes_per_level parameter - Ready to benchmark
+**2.1** Parallelize candidate leaf scanning - DONE
+**2.2** Parallel quantized distance computation - DONE  
+**2.3** Tune probes_per_level parameter - Ready to benchmark
 
 The parallel probe optimization is complete and tested!

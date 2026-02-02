@@ -136,12 +136,12 @@ impl ScalableIndex {
 **Target:** Maintain 4x SIMD speedup
 
 **Current status:**
-✅ NEON dot product: ~18ns (1024-dim)  
-✅ NEON L2 squared: ~30ns (1024-dim)  
-✅ NEON Hamming: ~10ns (1024-bit)
+NEON dot product: ~18ns (1024-dim)  
+NEON L2 squared: ~30ns (1024-dim)  
+NEON Hamming: ~10ns (1024-bit)
 
 **Additional optimizations:**
-1. **Loop unrolling** (already have 4x unroll) ✅
+1. **Loop unrolling** (already have 4x unroll)
 2. **Prefetching:** Add manual prefetch hints
 3. **Cache alignment:** Align vectors to 64-byte boundaries
 
@@ -181,7 +181,7 @@ let candidates: Vec<(usize, u32)> = (0..self.quantized.len())
 **Why it matters:**
 - Single-threaded: 1M vectors × 10ns = 10ms
 - 10 cores: 10ms / 8 = **1.2ms** (accounting for overhead)
-- With SIMD + parallel: **0.3-0.5ms** 🚀
+- With SIMD + parallel: **0.3-0.5ms**
 
 ---
 
@@ -231,7 +231,7 @@ impl VectorStore {
 **Expected performance:**
 - Cache hit (hot vector): ~50ns access
 - Cache miss (cold vector): ~500ns-1μs (one SSD page fetch)
-- Reranking 50 candidates: 50 × 30ns + 10 × 1μs = **11.5μs** ✅
+- Reranking 50 candidates: 50 × 30ns + 10 × 1μs = **11.5μs**
 
 ---
 
@@ -369,33 +369,33 @@ p999: 1-2 ms       ← Still excellent
 ## Implementation Order
 
 ### Week 1: Foundation (High Impact)
-1. ✅ Remove hierarchical index (use flat scan)
-2. ✅ Load quantized vectors into RAM
-3. ✅ Implement two-phase search
-4. ✅ Verify NEON Hamming is used
+1. Remove hierarchical index (use flat scan)
+2. Load quantized vectors into RAM
+3. Implement two-phase search
+4. Verify NEON Hamming is used
 
 **Expected:** 1-2ms p99
 
 ### Week 2: Parallel + Memory (Medium Effort)
-1. ⬜ Add parallel Hamming scan with rayon
-2. ⬜ Implement mmap for full precision vectors
-3. ⬜ Tune chunk sizes for parallel work
+1. Add parallel Hamming scan with rayon
+2. Implement mmap for full precision vectors
+3. Tune chunk sizes for parallel work
 
 **Expected:** 0.5-1ms p99
 
 ### Week 3: Polish (Low Hanging Fruit)
-1. ⬜ Add prefetch hints
-2. ⬜ Align vectors to cache lines
-3. ⬜ Optimize sorting (min-heap vs full sort)
+1. Add prefetch hints
+2. Align vectors to cache lines
+3. Optimize sorting (min-heap vs full sort)
 
 **Expected:** 0.3-0.7ms p99
 
 ### Week 4: Advanced (Optional)
-1. ⬜ Add LRU caching
-2. ⬜ Batch query optimization
-3. ⬜ Profile with Instruments
+1. Add LRU caching
+2. Batch query optimization
+3. Profile with Instruments
 
-**Expected:** 0.2-0.5ms p99 ✅ TARGET!
+**Expected:** 0.2-0.5ms p99 TARGET!
 
 ---
 
@@ -475,7 +475,7 @@ src/
 | **Same code, more RAM** | 0.3ms | 1ms | 1000 | 16GB | 500M vectors |
 | **+ All optimizations** | 0.2ms | 0.5ms | 2000+ | 32GB | 1B+ vectors |
 
-**Key insight: Same architecture scales 100x with better hardware!** 🚀
+**Key insight: Same architecture scales 100x with better hardware!**
 
 ---
 
@@ -483,19 +483,19 @@ src/
 
 ### Why Hierarchical Index for Everything
 
-✅ **Advantages:**
+**Advantages:**
 - Scales from 1M to billions of vectors
 - Logarithmic growth (depth increases slowly)
 - Works with limited RAM (only tree structure needed)
 - Mature algorithms (proven at scale)
 - Same code runs on laptop and production
 
-⚠️ **Current Limitations (Laptop):**
+**Current Limitations (Laptop):**
 - Cold start latency (disk I/O)
 - Limited cache size with 2GB RAM
 - Slower than optimal for 1M vectors alone
 
-✅ **Future Advantages (Better Hardware):**
+**Future Advantages (Better Hardware):**
 - More RAM = bigger cache = lower latency
 - NVMe SSD = 10x faster cold reads
 - More cores = more parallel probes
@@ -505,8 +505,8 @@ src/
 
 | Hardware | 1M Vectors | 100M Vectors | 1B Vectors |
 |----------|-----------|--------------|------------|
-| **Laptop (16GB)** | 2-5ms | ❌ Too slow | ❌ Won't fit |
-| **Workstation (64GB)** | 0.5-1ms | 2-5ms | ❌ Tight fit |
+| **Laptop (16GB)** | 2-5ms | Too slow | Won't fit |
+| **Workstation (64GB)** | 0.5-1ms | 2-5ms | Tight fit |
 | **Server (256GB)** | 0.2-0.5ms | 0.5-2ms | 5-10ms |
 | **Distributed (N×256GB)** | 0.1-0.3ms | 0.3-1ms | 1-5ms |
 
@@ -526,6 +526,6 @@ src/
 
 **Current laptop (2GB available):** 1-3ms p99 latency  
 **Future server (64GB RAM):** 0.2-0.5ms p99 latency  
-**Same code, scales from millions to billions!** 🎯
+**Same code, scales from millions to billions!**
 
 Next: See `SPEED_CHECKLIST.md` for implementation steps.

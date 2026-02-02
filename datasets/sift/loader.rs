@@ -53,6 +53,7 @@ pub fn read_fvecs(path: &str) -> std::io::Result<(Vec<Vec<f32>>, usize)> {
 
 /// Read .ivecs format (ground truth neighbor indices)
 /// Format: [k: i32][neighbors: i32*k] repeated
+#[allow(dead_code)]
 pub fn read_ivecs(path: &str) -> std::io::Result<Vec<Vec<usize>>> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);

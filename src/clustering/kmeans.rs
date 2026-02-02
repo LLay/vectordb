@@ -30,6 +30,87 @@ pub struct ClusterAssignment {
 }
 
 impl KMeans {
+    /// Internal k-means fitting implementation
+    /// 
+    /// Used by both `fit` and `fit_verbose` to ensure identical logic
+    fn fit_internal(
+        vectors: &[Vec<f32>],
+        k: usize,
+        metric: DistanceMetric,
+        max_iterations: usize,
+        verbose: bool,
+    ) -> (Self, ClusterAssignment) {
+        let start = std::time::Instant::now();
+        
+        if verbose {
+            eprintln!("K-means clustering: {} vectors, k={}", vectors.len(), k);
+            eprintln!("Using k-means++ initialization...");
+        }
+        
+        let mut kmeans = Self::init_plusplus(vectors, k, metric);
+        let mut assignment = kmeans.assign(vectors);
+        let mut prev_assignments = assignment.assignments.clone();
+        
+        // Cap iterations - gains diminish quickly after ~10 iterations
+        let effective_max_iters = max_iterations.min(12);
+
+        for iteration in 0..effective_max_iters {
+            let iter_start = if verbose { Some(std::time::Instant::now()) } else { None };
+            
+            // Update centroids
+            let new_centroids = kmeans.update_centroids(vectors, &assignment);
+            kmeans.centroids = new_centroids;
+
+            // Reassign vectors
+            assignment = kmeans.assign(vectors);
+            
+            // Check convergence based on cluster reassignments
+            let changed = assignment.assignments
+                .iter()
+                .zip(prev_assignments.iter())
+                .filter(|(a, b)| a != b)
+                .count();
+            
+            let change_rate = changed as f32 / vectors.len() as f32;
+            
+            if verbose {
+                let iter_time = iter_start.unwrap().elapsed();
+                eprintln!("  Iteration {}: {:.2}% vectors reassigned, time={:.2}ms", 
+                         iteration + 1, change_rate * 100.0, iter_time.as_secs_f64() * 1000.0);
+            }
+
+            // Early stopping: if < 2% of vectors changed clusters
+            // Real-world data like SIFT rarely gets better after this point
+            if change_rate < 0.02 {
+                if verbose {
+                    eprintln!("K-means converged after {} iterations ({:.2}s)", 
+                             iteration + 1, start.elapsed().as_secs_f64());
+                }
+                break;
+            }
+            
+            prev_assignments = assignment.assignments.clone();
+        }
+        
+        if verbose && start.elapsed().as_secs_f64() > 1.0 {
+            eprintln!("K-means total time: {:.2}s", start.elapsed().as_secs_f64());
+        }
+
+        (kmeans, assignment)
+    }
+    
+    /// Run k-means clustering with verbose output
+    /// 
+    /// Same as `fit` but prints convergence information
+    pub fn fit_verbose(
+        vectors: &[Vec<f32>],
+        k: usize,
+        metric: DistanceMetric,
+        max_iterations: usize,
+    ) -> (Self, ClusterAssignment) {
+        Self::fit_internal(vectors, k, metric, max_iterations, true)
+    }
+
     /// Initialize k-means with k-means++ algorithm
     /// 
     /// Selects initial centroids that are far apart from each other
@@ -51,9 +132,9 @@ impl KMeans {
 
         // 2. For each remaining centroid, choose with probability proportional to distance squared
         for _ in 1..k {
-            // Compute distance from each vector to nearest centroid
+            // Compute distance from each vector to nearest centroid (parallel)
             let distances: Vec<f32> = vectors
-                .iter()
+                .par_iter()
                 .map(|v| {
                     centroids
                         .iter()
@@ -96,50 +177,29 @@ impl KMeans {
         metric: DistanceMetric,
         max_iterations: usize,
     ) -> (Self, ClusterAssignment) {
-        let mut kmeans = Self::init_plusplus(vectors, k, metric);
-        let mut assignment = kmeans.assign(vectors);
-
-        for _ in 0..max_iterations {
-            // Update centroids
-            let new_centroids = kmeans.update_centroids(vectors, &assignment);
-            
-            // Check for convergence (centroids didn't change)
-            let converged = new_centroids
-                .iter()
-                .zip(kmeans.centroids.iter())
-                .all(|(new, old)| {
-                    new.iter()
-                        .zip(old.iter())
-                        .all(|(a, b)| (a - b).abs() < 1e-6)
-                });
-
-            kmeans.centroids = new_centroids;
-
-            if converged {
-                break;
-            }
-
-            // Reassign vectors
-            assignment = kmeans.assign(vectors);
-        }
-
-        (kmeans, assignment)
+        // Use KMEANS_DEBUG environment variable to enable debug output
+        let verbose = std::env::var("KMEANS_DEBUG").is_ok();
+        Self::fit_internal(vectors, k, metric, max_iterations, verbose)
     }
 
-    /// Assign vectors to nearest centroids
+    /// Assign vectors to nearest centroids (parallel with optimized chunking)
     pub fn assign(&self, vectors: &[Vec<f32>]) -> ClusterAssignment {
+        // Use larger chunks for better cache locality and reduced overhead
+        // Chunk size of 256 vectors balances parallelism with cache efficiency
         let (assignments, distances): (Vec<_>, Vec<_>) = vectors
-            .par_iter()
-            .map(|v| {
-                // Find nearest centroid
-                let (best_idx, best_dist) = self
-                    .centroids
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| (i, distance(v, c, self.metric)))
-                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-                    .unwrap();
-                (best_idx, best_dist)
+            .par_chunks(256)
+            .flat_map(|chunk| {
+                chunk.iter().map(|v| {
+                    // Find nearest centroid
+                    let (best_idx, best_dist) = self
+                        .centroids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| (i, distance(v, c, self.metric)))
+                        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                        .unwrap();
+                    (best_idx, best_dist)
+                }).collect::<Vec<_>>()
             })
             .unzip();
 
@@ -149,41 +209,70 @@ impl KMeans {
         }
     }
 
-    /// Update centroids based on current assignment
+    /// Update centroids based on current assignment (parallel with reduce)
     fn update_centroids(
         &self,
         vectors: &[Vec<f32>],
         assignment: &ClusterAssignment,
     ) -> Vec<Vec<f32>> {
-        let mut new_centroids = vec![vec![0.0; self.dimension]; self.k];
-        let mut counts = vec![0; self.k];
-
-        // Sum up vectors in each cluster
-        for (vector, &cluster_id) in vectors.iter().zip(assignment.assignments.iter()) {
-            for (i, &val) in vector.iter().enumerate() {
-                new_centroids[cluster_id][i] += val;
-            }
-            counts[cluster_id] += 1;
-        }
-
-        // Compute means
-        for (centroid, count) in new_centroids.iter_mut().zip(counts.iter()) {
-            if *count > 0 {
-                for val in centroid.iter_mut() {
-                    *val /= *count as f32;
+        // Parallel reduction: each thread accumulates locally, then combine
+        let (sum_centroids, sum_counts) = vectors
+            .par_chunks(2048)  // Larger chunks for better cache locality
+            .zip(assignment.assignments.par_chunks(2048))
+            .map(|(vector_chunk, assignment_chunk)| {
+                // Thread-local accumulators (no locks!)
+                let mut local_centroids = vec![vec![0.0; self.dimension]; self.k];
+                let mut local_counts = vec![0usize; self.k];
+                
+                // Accumulate in thread-local storage
+                for (vector, &cluster_id) in vector_chunk.iter().zip(assignment_chunk.iter()) {
+                    for (i, &val) in vector.iter().enumerate() {
+                        local_centroids[cluster_id][i] += val;
+                    }
+                    local_counts[cluster_id] += 1;
                 }
-            }
-        }
+                
+                (local_centroids, local_counts)
+            })
+            .reduce(
+                || (vec![vec![0.0; self.dimension]; self.k], vec![0usize; self.k]),
+                |mut acc, curr| {
+                    // Merge two thread-local accumulators
+                    for cluster_id in 0..self.k {
+                        for i in 0..self.dimension {
+                            acc.0[cluster_id][i] += curr.0[cluster_id][i];
+                        }
+                        acc.1[cluster_id] += curr.1[cluster_id];
+                    }
+                    acc
+                },
+            );
+
+        let mut final_centroids = sum_centroids;
+        let final_counts = sum_counts;
+
+        // Compute means (parallel)
+        final_centroids
+            .par_iter_mut()
+            .zip(final_counts.par_iter())
+            .for_each(|(centroid, &count)| {
+                if count > 0 {
+                    let count_f32 = count as f32;
+                    for val in centroid.iter_mut() {
+                        *val /= count_f32;
+                    }
+                }
+            });
 
         // Handle empty clusters by reinitializing with random vectors
-        for (i, count) in counts.iter().enumerate() {
+        for (i, count) in final_counts.iter().enumerate() {
             if *count == 0 {
                 let random_idx = rand::random::<usize>() % vectors.len();
-                new_centroids[i] = vectors[random_idx].clone();
+                final_centroids[i] = vectors[random_idx].clone();
             }
         }
 
-        new_centroids
+        final_centroids
     }
 
     /// Find the nearest centroid for a query vector

@@ -10,6 +10,7 @@ ndarray-rand = "0.15"
 
 # Parallelism
 rayon = "1.10"
+num_cpus = "1.16"
 
 # Random number generation
 rand = "0.8"
@@ -74,14 +75,19 @@ harness = false
 name = "recall_bench"
 harness = false
 
-[[bench]]
-name = "speed_bench_1m_vectors"
-harness = false
 
 [[bench]]
 name = "sift_benchmark"
 harness = false
 
+[[bench]]
+name = "sift_microbench"
+harness = false
+
 [[bin]]
 name = "create_sift_subset"
 path = "datasets/sift/create_subset.rs"
+
+[[example]]
+name = "test_kmeans_improvements"
+path = "examples/test_kmeans_improvements.rs"

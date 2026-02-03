@@ -202,61 +202,18 @@ Total: 16μs vs 200μs all-L2
 
 ## Search Algorithm
 
-### Adaptive Probes Per Level
-
-**Problem:** With fixed probes at all levels, early mistakes compound exponentially.
-
-Traditional approach (probes=10 everywhere):
-```
-Level 0 (root):  10/100 clusters = 10% coverage
-Level 1:         10/100 clusters = 10% coverage  
-Level 2:         10/100 clusters = 10% coverage
-```
-
-**Issue:** Missing the correct cluster at the root eliminates 1,000+ descendants!
-
-**Solution:** Use more probes at shallow levels where decisions are critical.
-
-```rust
-fn calculate_adaptive_probes(depth: usize, base_probes: usize) -> usize {
-    // Formula: base × (1 + (max_depth - depth) × 0.5)
-    // Depth 0 (root): 3× base probes
-    // Depth 1:        2.5× base probes
-    // Depth 2:        2× base probes
-    // Depth 3+:       1× base probes
-}
-```
-
-**Why it works:**
-- **Root probes are cheap:** Only 100 nodes, computing 30 distances instead of 10 is fast
-- **Root mistakes are fatal:** Wrong cluster → 1,000+ vectors unreachable → recall = 0%
-- **Deep probes are expensive:** 10,000+ nodes, high cost for diminishing returns
-- **Deep mistakes are recoverable:** Other branches can still find neighbors
-
-**Impact:**
-- Recall: +10-15% improvement
-- Latency: Similar or better (searches fewer total leaves by being selective early)
-
----
-
-### Search Implementation
-
 ```rust
 pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usize) -> Vec<(usize, f32)> {
     // 1. Quantize query
     let query_binary = self.quantizer.quantize(query);
     
-    // 2. Navigate tree with adaptive probes
+    // 2. Navigate tree, accumulating leaves
     let mut current_nodes = self.root_ids.clone();
     let mut accumulated_leaves = Vec::new();
-    let mut depth = 0;
     
     while !current_nodes.is_empty() {
-        // Adaptive probes: more at root, fewer at depth
-        let probes_at_level = self.calculate_adaptive_probes(depth, probes);
-        
-        // Find top probes closest to query (using SIMD batch + heap selection)
-        let top_nodes = self.find_closest_nodes(&current_nodes, query, probes_at_level);
+        // Find top probes closest to query
+        let top_nodes = self.find_closest_nodes(&current_nodes, &query_binary, probes);
         
         // Separate leaves from internal nodes
         let (leaves, internal): (Vec<_>, Vec<_>) = top_nodes
@@ -270,8 +227,6 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
             .iter()
             .flat_map(|&id| self.nodes[id].children.clone())
             .collect();
-        
-        depth += 1;
     }
     
     // 3. Binary scan all accumulated leaf vectors
@@ -303,11 +258,7 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
 }
 ```
 
-**Key Innovations:** 
-1. **Adaptive probes** - Smart allocation of probe budget across tree levels
-2. **Leaf accumulation** - Handles unbalanced trees (different branches reach leaves at different depths)
-3. **SIMD batch distances** - Computes 4 centroid distances simultaneously
-4. **Heap-based top-k** - O(n) selection instead of O(n log n) sorting
+**Key Innovation:** Leaf accumulation handles unbalanced trees  (different branches can reach leaves at different depths).
 
 
 ---
@@ -334,11 +285,9 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
 ### Search
 
 **probes** (1-10)
-- **Base** number of branches explored (automatically adapted per level)
-- Actual probes at root: ~3× base (e.g., probes=10 → 30 at root)
-- Actual probes at depth: ~1× base (e.g., probes=10 → 10 at leaves)
-- Higher → better recall, more work
-- Recommended: 3-7 (will be adapted to 9-21 at root)
+- Branches explored at each level
+- Higher → better recall, slower search
+- Recommended: 3-7
 
 **rerank_factor** (2-10)
 - Multiplier for binary candidates

@@ -375,14 +375,22 @@ impl ClusteredIndex {
                     .collect()
             };
 
-            node_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-            // Take top probes_per_level nodes
-            let top_nodes: Vec<usize> = node_distances
-                .iter()
-                .take(probes_per_level)
-                .map(|(id, _)| *id)
-                .collect();
+            // Use heap-based selection for top-k (much faster than sorting)
+            // This is O(n log k) instead of O(n log n)
+            let top_nodes: Vec<usize> = if node_distances.len() <= probes_per_level {
+                // All nodes fit, no need for heap
+                node_distances.iter().map(|(id, _)| *id).collect()
+            } else {
+                // Use partial sorting to find top k
+                node_distances.select_nth_unstable_by(
+                    probes_per_level,
+                    |a, b| a.1.partial_cmp(&b.1).unwrap()
+                );
+                node_distances[..probes_per_level]
+                    .iter()
+                    .map(|(id, _)| *id)
+                    .collect()
+            };
 
             // Separate leaf nodes from internal nodes (tree may be unbalanced)
             let (leaf_nodes, internal_nodes): (Vec<usize>, Vec<usize>) = top_nodes

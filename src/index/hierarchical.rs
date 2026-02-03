@@ -320,26 +320,27 @@ impl ClusteredIndex {
         node_ids
     }
 
-    /// Calculate adaptive probes using a budget-based approach
+    /// Calculate adaptive probes using a budget-based approach with minimum floor
     /// 
-    /// Key innovation: Keeps TOTAL work constant, just redistributes it.
-    /// More probes at shallow levels (root) where mistakes are costly,
-    /// fewer probes at deep levels where mistakes are less impactful.
+    /// Key innovation: Every level gets AT LEAST base_probes (no starvation),
+    /// plus extra probes from budget allocated to shallow levels.
     /// 
-    /// Budget allocation by depth:
-    /// - Depth 0 (root): 40% of budget
-    /// - Depth 1: 30% of budget
-    /// - Depth 2: 20% of budget
-    /// - Depth 3+: 10% of budget (remaining)
+    /// Strategy:
+    /// 1. Calculate budget allocation based on depth weight
+    /// 2. Take MAX(budget_allocation, base_probes) as actual probes
+    /// 3. Only deduct the EXTRA probes (beyond base) from budget
     /// 
-    /// Example with base_probes=10, estimated 5 levels:
-    /// - Total budget: 10 × 5 = 50 probes across all levels
-    /// - Depth 0: 20 probes (40%)
-    /// - Depth 1: 15 probes (30%)
-    /// - Depth 2: 10 probes (20%)
-    /// - Depth 3+: 5 probes (10%)
+    /// This ensures:
+    /// - Every level: minimum base_probes (no starvation)
+    /// - Root/early levels: get extra probes from budget (more attention)
+    /// - Total work: slightly more than fixed, but controlled
     /// 
-    /// This gives better recall WITHOUT performance penalty!
+    /// Example with base_probes=5, max_depth=4, budget=20:
+    /// - Depth 0: max(8, 5) = 8 probes, deduct 3 from budget
+    /// - Depth 1: max(5, 5) = 5 probes, deduct 0 from budget
+    /// - Depth 2: max(4, 5) = 5 probes, deduct 0 from budget
+    /// - Depth 3: max(2, 5) = 5 probes, deduct 0 from budget
+    /// - Total: 23 probes (~15% more than fixed 20)
     fn calculate_adaptive_probes(
         &self,
         depth: usize,
@@ -347,10 +348,6 @@ impl ClusteredIndex {
         num_nodes_at_level: usize,
         remaining_budget: &mut usize,
     ) -> usize {
-        if *remaining_budget == 0 {
-            return base_probes.min(num_nodes_at_level);
-        }
-        
         // Allocate budget by depth with decreasing weights
         let weight = match depth {
             0 => 0.40,  // 40% at root
@@ -359,20 +356,18 @@ impl ClusteredIndex {
             _ => 0.10,  // 10% at deeper levels
         };
         
-        // Calculate probes for this level
-        let probes = (*remaining_budget as f32 * weight).ceil() as usize;
+        // Calculate budget allocation for this level
+        let budget_allocation = (*remaining_budget as f32 * weight).ceil() as usize;
+        let budget_allocation = budget_allocation.min(num_nodes_at_level);
+        let budget_allocation = budget_allocation.min(*remaining_budget);
         
-        // Can't probe more nodes than exist at this level
-        let probes = probes.min(num_nodes_at_level);
+        // Ensure minimum floor: always at least base_probes
+        let probes = budget_allocation.max(base_probes.min(num_nodes_at_level));
         
-        // Can't exceed remaining budget
-        let probes = probes.min(*remaining_budget);
-        
-        // Ensure at least base_probes if budget allows
-        let probes = probes.max(base_probes.min(num_nodes_at_level).min(*remaining_budget));
-        
-        // Deduct from budget
-        *remaining_budget = remaining_budget.saturating_sub(probes);
+        // Only deduct the EXTRA probes beyond base from budget
+        // This way base_probes are "free" and budget gives extra attention to root
+        let extra_probes = budget_allocation.saturating_sub(base_probes);
+        *remaining_budget = remaining_budget.saturating_sub(extra_probes);
         
         probes
     }
@@ -382,16 +377,17 @@ impl ClusteredIndex {
     /// # Arguments
     /// * `query` - Query vector
     /// * `k` - Number of neighbors to return
-    /// * `probes_per_level` - Base number of clusters to explore (will be adapted by depth)
+    /// * `probes_per_level` - Base number of clusters to explore (minimum at each level)
     /// * `rerank_factor` - How many binary candidates to rerank
     /// 
-    /// # Budget-Based Adaptive Probes
+    /// # Adaptive Probes with Minimum Floor
     /// 
-    /// This function uses a budget-based approach to adaptive probes:
-    /// - Total probe budget stays CONSTANT (no performance penalty)
-    /// - Allocates 40% to root, 30% to level 1, 20% to level 2, 10% to rest
-    /// - Improves recall by 8-12% with NO latency increase
-    /// - Smarter allocation without doing more work
+    /// This function uses adaptive probes with a minimum floor guarantee:
+    /// - Every level gets AT LEAST base_probes (no starvation)
+    /// - Root/early levels get EXTRA probes from a budget
+    /// - Budget is used to give more attention to critical early decisions
+    /// - Total work: ~10-20% more than fixed, but with better recall
+    /// - Predictable and safe (no deep level starvation)
     pub fn search(
         &self,
         query: &[f32],

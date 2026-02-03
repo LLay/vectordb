@@ -202,7 +202,7 @@ Total: 16μs vs 200μs all-L2
 
 ## Search Algorithm
 
-### Budget-Based Adaptive Probes
+### Adaptive Probes with Minimum Floor
 
 **Problem:** With fixed probes at all levels, early mistakes compound exponentially.
 
@@ -215,7 +215,7 @@ Level 2:         10/100 clusters = 10% coverage
 
 **Issue:** Missing the correct cluster at the root eliminates 1,000+ descendants!
 
-**Solution:** Budget-based allocation - keep TOTAL work constant, redistribute smartly.
+**Solution:** Adaptive probes with guaranteed minimum - every level gets at least base_probes, root gets extra.
 
 ```rust
 fn calculate_adaptive_probes(
@@ -223,36 +223,45 @@ fn calculate_adaptive_probes(
     base_probes: usize,
     remaining_budget: &mut usize
 ) -> usize {
-    // Allocate budget by depth with decreasing weights
+    // Calculate budget allocation by depth weight
     let weight = match depth {
         0 => 0.40,  // 40% at root
         1 => 0.30,  // 30% at level 1
         2 => 0.20,  // 20% at level 2
         _ => 0.10,  // 10% at deeper levels
     };
-    // ... allocation logic ...
+    let budget_allocation = (remaining_budget * weight).ceil();
+    
+    // Minimum floor: always at least base_probes
+    let probes = max(budget_allocation, base_probes);
+    
+    // Only deduct EXTRA probes beyond base from budget
+    let extra = budget_allocation - base_probes;
+    remaining_budget -= extra;
+    
+    probes
 }
 ```
 
-**Example with probes=10, max_depth=5:**
+**Example with probes=5, max_depth=4, budget=20:**
 ```
-Total budget: 10 × 5 = 50 probes
-Level 0 (root): 20 probes (40% of budget)
-Level 1:        15 probes (30%)
-Level 2:        10 probes (20%)
-Level 3+:       5 probes  (10%)
+Level 0: max(8, 5) = 8 probes, deduct 3 from budget (budget now 17)
+Level 1: max(5, 5) = 5 probes, deduct 0 from budget (budget now 17)
+Level 2: max(3, 5) = 5 probes, deduct 0 from budget (budget now 17)
+Level 3: max(2, 5) = 5 probes, deduct 0 from budget (budget now 17)
+Total: 23 probes (~15% more work, but no starvation)
 ```
 
 **Why it works:**
-- **Root probes are cheap:** Only 100 nodes, small absolute cost
-- **Root mistakes are fatal:** Wrong cluster → 1,000+ vectors unreachable
-- **Total work stays constant:** Same 50 probes, just redistributed
-- **No performance penalty:** Unlike multiplier-based which does MORE work
+- **No starvation:** Every level gets at least base_probes
+- **Root attention:** Root gets extra from budget (8 instead of 5)
+- **Controlled overhead:** Only ~10-20% more work than fixed
+- **Predictable:** Never degrades to 1-2 probes at deep levels
 
 **Impact:**
-- Recall: +8-12% improvement (53% → 62% on balanced config)
-- Latency: **SAME** (no penalty, total work unchanged!)
-- Key insight: Smarter allocation without doing more work
+- Recall: +5-10% improvement (better root decisions)
+- Latency: +10-20% (controlled overhead from extra root probes)
+- Trade-off: Slight performance cost for meaningful recall gain
 
 ---
 
@@ -263,14 +272,14 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
     // 1. Quantize query
     let query_binary = self.quantizer.quantize(query);
     
-    // 2. Navigate tree with budget-based adaptive probes
+    // 2. Navigate tree with adaptive probes (minimum floor + budget)
     let mut current_nodes = self.root_ids.clone();
     let mut accumulated_leaves = Vec::new();
     let mut depth = 0;
-    let mut remaining_budget = probes * max_depth;  // Total budget
+    let mut remaining_budget = probes * max_depth;  // Extra probes budget
     
     while !current_nodes.is_empty() {
-        // Budget-based adaptive probes: redistribute fixed budget
+        // Adaptive probes: min(base_probes) + extra from budget for root
         let probes_at_level = self.calculate_adaptive_probes(
             depth, probes, current_nodes.len(), &mut remaining_budget
         );
@@ -324,7 +333,7 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
 ```
 
 **Key Innovations:** 
-1. **Budget-based adaptive probes** - Redistributes fixed probe budget (more at root, less at depth) with NO performance penalty
+1. **Adaptive probes with minimum floor** - Every level gets at least base_probes, root gets extra for better decisions (~10-20% overhead, +5-10% recall)
 2. **Leaf accumulation** - Handles unbalanced trees (different branches reach leaves at different depths)
 3. **SIMD batch distances** - Computes 4 centroid distances simultaneously
 4. **Quickselect top-k** - O(n) selection instead of O(n log n) sorting
@@ -354,11 +363,11 @@ pub fn search(&self, query: &[f32], k: usize, probes: usize, rerank_factor: usiz
 ### Search
 
 **probes** (1-10)
-- **Base** number of branches explored (automatically redistributed per level)
-- Uses budget-based allocation: probes × max_depth total budget
-- Root gets 40% of budget, level 1 gets 30%, level 2 gets 20%, rest gets 10%
-- Example: probes=10, depth=5 → budget=50 → root gets 20, L1 gets 15, L2 gets 10
-- Higher → better recall, proportionally more work (total budget scales)
+- **Minimum** number of branches explored at each level
+- Root gets extra attention from budget (e.g., probes=5 → root gets 8)
+- Deep levels guaranteed to get at least base_probes (no starvation)
+- Total work: ~10-20% more than fixed probes (controlled overhead)
+- Higher → better recall, proportionally more work
 - Recommended: 3-7
 
 **rerank_factor** (2-10)

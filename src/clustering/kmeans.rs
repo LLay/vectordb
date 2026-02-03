@@ -30,87 +30,6 @@ pub struct ClusterAssignment {
 }
 
 impl KMeans {
-    /// Internal k-means fitting implementation
-    /// 
-    /// Used by both `fit` and `fit_verbose` to ensure identical logic
-    fn fit_internal(
-        vectors: &[Vec<f32>],
-        k: usize,
-        metric: DistanceMetric,
-        max_iterations: usize,
-        verbose: bool,
-    ) -> (Self, ClusterAssignment) {
-        let start = std::time::Instant::now();
-        
-        if verbose {
-            eprintln!("K-means clustering: {} vectors, k={}", vectors.len(), k);
-            eprintln!("Using k-means++ initialization...");
-        }
-        
-        let mut kmeans = Self::init_plusplus(vectors, k, metric);
-        let mut assignment = kmeans.assign(vectors);
-        let mut prev_assignments = assignment.assignments.clone();
-        
-        // Cap iterations - gains diminish quickly after ~10 iterations
-        let effective_max_iters = max_iterations.min(12);
-
-        for iteration in 0..effective_max_iters {
-            let iter_start = if verbose { Some(std::time::Instant::now()) } else { None };
-            
-            // Update centroids
-            let new_centroids = kmeans.update_centroids(vectors, &assignment);
-            kmeans.centroids = new_centroids;
-
-            // Reassign vectors
-            assignment = kmeans.assign(vectors);
-            
-            // Check convergence based on cluster reassignments
-            let changed = assignment.assignments
-                .iter()
-                .zip(prev_assignments.iter())
-                .filter(|(a, b)| a != b)
-                .count();
-            
-            let change_rate = changed as f32 / vectors.len() as f32;
-            
-            if verbose {
-                let iter_time = iter_start.unwrap().elapsed();
-                eprintln!("  Iteration {}: {:.2}% vectors reassigned, time={:.2}ms", 
-                         iteration + 1, change_rate * 100.0, iter_time.as_secs_f64() * 1000.0);
-            }
-
-            // Early stopping: if < 2% of vectors changed clusters
-            // Real-world data like SIFT rarely gets better after this point
-            if change_rate < 0.02 {
-                if verbose {
-                    eprintln!("K-means converged after {} iterations ({:.2}s)", 
-                             iteration + 1, start.elapsed().as_secs_f64());
-                }
-                break;
-            }
-            
-            prev_assignments = assignment.assignments.clone();
-        }
-        
-        if verbose && start.elapsed().as_secs_f64() > 1.0 {
-            eprintln!("K-means total time: {:.2}s", start.elapsed().as_secs_f64());
-        }
-
-        (kmeans, assignment)
-    }
-    
-    /// Run k-means clustering with verbose output
-    /// 
-    /// Same as `fit` but prints convergence information
-    pub fn fit_verbose(
-        vectors: &[Vec<f32>],
-        k: usize,
-        metric: DistanceMetric,
-        max_iterations: usize,
-    ) -> (Self, ClusterAssignment) {
-        Self::fit_internal(vectors, k, metric, max_iterations, true)
-    }
-
     /// Initialize k-means with k-means++ algorithm
     /// 
     /// Selects initial centroids that are far apart from each other
@@ -177,9 +96,40 @@ impl KMeans {
         metric: DistanceMetric,
         max_iterations: usize,
     ) -> (Self, ClusterAssignment) {
-        // Use KMEANS_DEBUG environment variable to enable debug output
-        let verbose = std::env::var("KMEANS_DEBUG").is_ok();
-        Self::fit_internal(vectors, k, metric, max_iterations, verbose)
+        let mut kmeans = Self::init_plusplus(vectors, k, metric);
+        let mut assignment = kmeans.assign(vectors);
+        let mut prev_assignments = assignment.assignments.clone();
+        
+        // Cap iterations - gains diminish quickly after ~10 iterations
+        let effective_max_iters = max_iterations.min(12);
+
+        for _iteration in 0..effective_max_iters {
+            // Update centroids
+            let new_centroids = kmeans.update_centroids(vectors, &assignment);
+            kmeans.centroids = new_centroids;
+
+            // Reassign vectors
+            assignment = kmeans.assign(vectors);
+            
+            // Check convergence based on cluster reassignments
+            let changed = assignment.assignments
+                .iter()
+                .zip(prev_assignments.iter())
+                .filter(|(a, b)| a != b)
+                .count();
+            
+            let change_rate = changed as f32 / vectors.len() as f32;
+
+            // Early stopping: if < 2% of vectors changed clusters
+            // Real-world data like SIFT rarely gets better after this point
+            if change_rate < 0.02 {
+                break;
+            }
+            
+            prev_assignments = assignment.assignments.clone();
+        }
+
+        (kmeans, assignment)
     }
 
     /// Assign vectors to nearest centroids (parallel with optimized chunking)

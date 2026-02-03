@@ -48,6 +48,39 @@ pub fn batch_distances(
         .collect()
 }
 
+/// SIMD-optimized batch distance computation
+/// 
+/// Computes distances from query to multiple target vectors using SIMD
+/// to process 4 distances simultaneously. Much faster than calling distance()
+/// in a loop for small-medium batch sizes.
+/// 
+/// Returns vector of (index, distance) pairs in original order.
+pub fn batch_distances_simd(
+    query: &[f32],
+    targets: &[&[f32]],
+    metric: DistanceMetric,
+) -> Vec<(usize, f32)> {
+    let distances = match metric {
+        DistanceMetric::L2 => simd_neon::l2_squared_batch(query, targets),
+        DistanceMetric::DotProduct => {
+            let dots = simd_neon::dot_product_batch(query, targets);
+            dots.into_iter().map(|d| -d).collect() // Negate for similarity
+        }
+        DistanceMetric::Cosine => {
+            // Cosine requires per-vector normalization, can't batch easily
+            // Fall back to individual calculations
+            targets.iter().map(|t| {
+                let dot = simd_neon::dot_product(query, t);
+                let norm_q = simd_neon::dot_product(query, query).sqrt();
+                let norm_t = simd_neon::dot_product(t, t).sqrt();
+                1.0 - (dot / (norm_q * norm_t))
+            }).collect()
+        }
+    };
+    
+    distances.into_iter().enumerate().collect()
+}
+
 /// Parallel batch distance computation using rayon
 pub fn batch_distances_parallel(
     query: &[f32],

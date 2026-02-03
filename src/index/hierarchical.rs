@@ -352,9 +352,9 @@ impl ClusteredIndex {
             }
 
             // Find nearest nodes using FULL PRECISION centroids (accurate routing)
-            use rayon::prelude::*;
-            let mut node_distances: Vec<(usize, f32)> = if current_nodes.len() > 10 {
-                // Parallel distance computation for many nodes
+            let mut node_distances: Vec<(usize, f32)> = if current_nodes.len() > 100 {
+                // Use parallel computation for very large node sets
+                use rayon::prelude::*;
                 current_nodes
                     .par_iter()
                     .map(|&node_id| {
@@ -363,8 +363,23 @@ impl ClusteredIndex {
                         (node_id, dist)
                     })
                     .collect()
+            } else if current_nodes.len() >= 4 {
+                // Use SIMD batch computation for small-medium node sets (most common case)
+                // This computes 4 distances simultaneously, much faster than loop
+                let centroids: Vec<&[f32]> = current_nodes
+                    .iter()
+                    .map(|&node_id| self.nodes[node_id].full_centroid.as_slice())
+                    .collect();
+                
+                let distances = crate::distance::simd_neon::l2_squared_batch(query, &centroids);
+                
+                current_nodes
+                    .iter()
+                    .zip(distances.iter())
+                    .map(|(&node_id, &dist)| (node_id, dist))
+                    .collect()
             } else {
-                // Sequential for few nodes (less overhead)
+                // Sequential for very few nodes (< 4)
                 current_nodes
                     .iter()
                     .map(|&node_id| {

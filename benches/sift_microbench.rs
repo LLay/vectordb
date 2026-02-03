@@ -375,9 +375,9 @@ fn bench_full_search(c: &mut Criterion) {
     
     // Test the configurations from main benchmark
     let configs = [
-        ("low_latency", 2, 2),
-        ("balanced", 5, 3),
-        ("high_recall", 10, 5),
+        ("low_latency", 2, 5),
+        ("balanced", 5, 10),
+        ("high_recall", 10, 20),
     ];
     
     for (name, probes, rerank_factor) in configs {

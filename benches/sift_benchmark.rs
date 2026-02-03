@@ -173,10 +173,11 @@ fn benchmark_sift(c: &mut Criterion) {
     println!("  → Build time: {:.2}s\n", build_time.as_secs_f64());
     
     // Benchmark different configurations
+    // Format: (name, probes, rerank_factor)
     let configs = vec![
-        ("low_latency", 2, 2),
-        ("balanced", 5, 3),
-        ("high_recall", 10, 5),
+        ("low_latency", 2, 5),    // +150% more candidates reranked
+        ("balanced", 5, 10),       // +233% more candidates reranked
+        ("high_recall", 10, 20),   // +300% more candidates reranked
     ];
     
     let dataset_name = match dataset_size {

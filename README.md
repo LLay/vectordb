@@ -47,14 +47,16 @@ cargo run --release -- bench --num 10000 --branching 10
 
 ### TODO
 - **Learned clustering** dynamically choosing cluster count, k-means iterations, and quantization thresholds
+- **Learned rerank_factor** dynamically choosing rerank_factor based on query and cluster statistics
+- **Tree sizing optimization** choose leaf size and branching factor. This should be done automatically based on the data distribution.
 - **RaBitQ** implementation for binary quantization
 - **Dimensionality reduction** before quantization
 - **Quantization error bounds** for reranking
-- **Learned rerank_factor** dynamically choosing rerank_factor based on query and cluster statistics
 - **Product quantization**
 - **Memory-mapped storage**
 - **Support vector insertion and deletion** Index updates. Implement [SPFresh](https://dl.acm.org/doi/10.1145/3600006.3613166) style index updates.
 - **Document arithmetic intensity** https://modal.com/gpu-glossary/perf/arithmetic-intensity
+- **Early termination during leaf search** Instead of searching all vectors in selected leaves, track best-k distance threshold and skip vectors if binary distance > threshold.
 
 ## Project Structure
 

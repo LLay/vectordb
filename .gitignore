@@ -17,5 +17,6 @@ gist_index*.bin
 /examples/visualization/tree_structure*.png
 viz_index.bin
 .DS_Store
-venv/   
+venv/
 **.log
+examples/visualization/output/

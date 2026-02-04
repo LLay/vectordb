@@ -6,6 +6,10 @@
 **.tar.gz
 sift_index*.bin
 
+# GIST benchmark dataset
+/datasets/gist/data/
+gist_index*.bin
+
 # Visualization outputs
 /examples/visualization/vector_space*.csv
 /examples/visualization/vector_space*.png

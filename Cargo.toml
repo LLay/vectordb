@@ -92,9 +92,17 @@ harness = false
 name = "sift_comparison"
 harness = false
 
+[[bench]]
+name = "gist_comparison"
+harness = false
+
 [[bin]]
 name = "create_sift_subset"
 path = "datasets/sift/create_subset.rs"
+
+[[bin]]
+name = "create_gist_subset"
+path = "datasets/gist/create_subset.rs"
 
 [[example]]
 name = "test_kmeans_improvements"

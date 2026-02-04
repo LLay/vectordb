@@ -36,8 +36,8 @@ fn main() -> std::io::Result<()> {
     // Create base vectors subset
     println!("Processing base vectors...");
     let count = copy_fvecs_subset(
-        "datasets/gist/data/gist/gist_base.fvecs",
-        &format!("datasets/gist/data/gist/gist_base_{}.fvecs", subset_size),
+        "datasets/gist/data/gist_base.fvecs",
+        &format!("datasets/gist/data/gist_base_{}.fvecs", subset_size),
         subset_size,
     )?;
     println!("  ✓ Created {} vectors", count);
@@ -53,7 +53,7 @@ fn main() -> std::io::Result<()> {
     println!("╚═══════════════════════════════════════════════════════════════╝");
     println!();
     println!("Files created:");
-    println!("  • datasets/gist/data/gist/gist_base_{}.fvecs", subset_size);
+    println!("  • datasets/gist/data/gist_base_{}.fvecs", subset_size);
     println!();
     println!("To benchmark:");
     println!("  GIST_SIZE={} cargo bench --bench gist_comparison", subset_size);

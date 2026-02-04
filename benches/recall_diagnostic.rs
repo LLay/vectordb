@@ -599,7 +599,7 @@ fn main() {
         dataset_size,
         branching_factor: 30,
         target_leaf_size: 100,
-        probes_per_level: 10,
+        probes_per_level: 1000,
         rerank_factor: 10,
         k: 10,
         num_queries: 100,

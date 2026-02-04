@@ -81,6 +81,10 @@ name = "sift_benchmark"
 harness = false
 
 [[bench]]
+name = "gist_benchmark"
+harness = false
+
+[[bench]]
 name = "sift_microbench"
 harness = false
 

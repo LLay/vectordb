@@ -1,20 +1,20 @@
-/// SIFT-1M Benchmark (VectorDBBench compatible)
+/// GIST-1M Benchmark (VectorDBBench compatible)
 /// 
-/// Measures performance on standard SIFT dataset:
-/// - 1M vectors, 128 dimensions (or subset)
-/// - 10K queries with ground truth
+/// Measures performance on standard GIST dataset:
+/// - 1M vectors, 960 dimensions (or subset)
+/// - 1K queries with ground truth
 /// - Metrics: QPS, latency (p50/p95/p99), recall@10/100
 /// 
 /// Loads .fvecs/.ivecs format directly - no conversion needed.
 /// 
 /// Usage:
-///   cargo bench --bench sift_benchmark                    # Full 1M dataset
-///   SIFT_SIZE=10000 cargo bench --bench sift_benchmark    # 10K subset
-///   SIFT_SIZE=100000 cargo bench --bench sift_benchmark   # 100K subset
+///   cargo bench --bench gist_benchmark                    # Full 1M dataset
+///   GIST_SIZE=10000 cargo bench --bench gist_benchmark    # 10K subset
+///   GIST_SIZE=100000 cargo bench --bench gist_benchmark   # 100K subset
 
-// Load the SIFT dataset utilities from datasets/sift
-#[path = "../datasets/sift/mod.rs"]
-mod sift;
+// Load the GIST dataset utilities from datasets/gist
+#[path = "../datasets/gist/mod.rs"]
+mod gist;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use vectordb::{ClusteredIndexWithRaBitQ, DistanceMetric};
@@ -83,10 +83,10 @@ fn measure_latency_percentiles(
 fn detect_dataset_size() -> Option<usize> {
     // Check environment variable for subset size
     // This avoids conflicts with Criterion's argument parsing
-    if let Ok(size_str) = env::var("SIFT_SIZE") {
+    if let Ok(size_str) = env::var("GIST_SIZE") {
         if let Ok(size) = size_str.parse::<usize>() {
             if size >= 1000 && size <= 1_000_000 {
-                println!("  Using subset: {} vectors (from SIFT_SIZE env var)\n", size);
+                println!("  Using subset: {} vectors (from GIST_SIZE env var)\n", size);
                 return Some(size);
             }
         }
@@ -95,31 +95,31 @@ fn detect_dataset_size() -> Option<usize> {
     None
 }
 
-fn benchmark_sift(c: &mut Criterion) {
+fn benchmark_gist(c: &mut Criterion) {
     println!("\n╔═══════════════════════════════════════════════════════════════╗");
-    println!("║           SIFT Benchmark Loading                             ║");
+    println!("║           GIST Benchmark Loading                             ║");
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
 
     // Detect dataset size from command line
     let dataset_size = detect_dataset_size();
     let base_file = match dataset_size {
-        Some(size) => format!("datasets/sift/data/sift_base_{}.fvecs", size),
-        None => "datasets/sift/data/sift_base.fvecs".to_string(),
+        Some(size) => format!("datasets/gist/data/gist_base_{}.fvecs", size),
+        None => "datasets/gist/data/gist_base.fvecs".to_string(),
     };
     
     // Try loading the dataset
-    let (vectors, dims) = match sift::loader::read_fvecs(&base_file) {
+    let (vectors, dims) = match gist::loader::read_fvecs(&base_file) {
         Ok(data) => data,
         Err(_) if dataset_size.is_some() => {
             eprintln!("\nError: Subset file not found: {}", base_file);
             eprintln!("Create it first:");
-            eprintln!("  cargo run --release --bin create_sift_subset -- {}\n", dataset_size.unwrap());
+            eprintln!("  cargo run --release --bin create_gist_subset -- {}\n", dataset_size.unwrap());
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("\nError: SIFT dataset not found: {}", base_file);
+            eprintln!("\nError: GIST dataset not found: {}", base_file);
             eprintln!("Download it first:");
-            eprintln!("  cd datasets/sift && ./download.sh\n");
+            eprintln!("  See datasets/gist/README.md\n");
             std::process::exit(1);
         }
     };
@@ -127,9 +127,9 @@ fn benchmark_sift(c: &mut Criterion) {
     println!("Loading base vectors from {}...", base_file);
     println!("  → {} vectors, {} dimensions\n", vectors.len(), dims);
     
-    println!("Loading query vectors from datasets/sift/data/sift_query.fvecs...");
-    let (queries, _) = sift::loader::read_fvecs("datasets/sift/data/sift_query.fvecs")
-        .expect("Failed to load SIFT queries");
+    println!("Loading query vectors from datasets/gist/data/gist_query.fvecs...");
+    let (queries, _) = gist::loader::read_fvecs("datasets/gist/data/gist_query.fvecs")
+        .expect("Failed to load GIST queries");
     println!("  → {} queries\n", queries.len());
     
     // For subsets, compute ground truth via brute force (fast enough)
@@ -151,8 +151,8 @@ fn benchmark_sift(c: &mut Criterion) {
         println!("\r  → Computed {} ground truth sets\n", gt.len());
         gt
     } else {
-        println!("Loading ground truth from datasets/sift/data/sift_groundtruth.ivecs...");
-        let gt = sift::loader::read_ivecs("datasets/sift/data/sift_groundtruth.ivecs")
+        println!("Loading ground truth from datasets/gist/data/gist_groundtruth.ivecs...");
+        let gt = gist::loader::read_ivecs("datasets/gist/data/gist_groundtruth.ivecs")
             .expect("Failed to load ground truth");
         println!("  → {} ground truth sets (100-NN each)\n", gt.len());
         gt
@@ -163,7 +163,7 @@ fn benchmark_sift(c: &mut Criterion) {
     let build_start = Instant::now();
     let index = ClusteredIndexWithRaBitQ::build(
         vectors.clone(),
-        &format!("sift_index_{}.bin", vectors.len()),
+        &format!("gist_index_{}.bin", vectors.len()),
         100,  // branching_factor
         100,  // target_leaf_size
         DistanceMetric::L2,
@@ -175,16 +175,16 @@ fn benchmark_sift(c: &mut Criterion) {
     // Benchmark different configurations
     // Format: (name, probes, rerank_factor)
     let configs = vec![
-        ("low_latency", 50, 10),
-        ("medium_low_latency", 75, 10),
+        ("low_latency", 20, 10),
+        ("medium_low_latency", 50, 10),
         ("balanced", 100, 10), 
-        ("medium_high_recall", 200, 10),
-        ("high_recall", 500, 10),
+        ("medium_high_recall", 500, 10),
+        ("high_recall", 1000, 10),
     ];
     
     let dataset_name = match dataset_size {
-        Some(size) => format!("sift_{}k", size / 1000),
-        None => "sift_1m".to_string(),
+        Some(size) => format!("gist_{}k", size / 1000),
+        None => "gist_1m".to_string(),
     };
     
     for (name, probes, rerank_factor) in configs {
@@ -248,7 +248,7 @@ fn benchmark_sift(c: &mut Criterion) {
     }
     
     println!("\n╔═══════════════════════════════════════════════════════════════╗");
-    println!("║           SIFT Benchmark Complete                            ║");
+    println!("║           GIST Benchmark Complete                            ║");
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
 }
 
@@ -257,6 +257,6 @@ criterion_group! {
     config = Criterion::default()
         .sample_size(10)  // Fewer samples for large dataset
         .warm_up_time(Duration::from_secs(5));
-    targets = benchmark_sift
+    targets = benchmark_gist
 }
 criterion_main!(benches);

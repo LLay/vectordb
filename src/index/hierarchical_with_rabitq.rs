@@ -20,11 +20,8 @@ pub struct ClusterNodeWithRaBitQ {
     /// Node ID
     #[allow(dead_code)]
     pub id: usize,
-    /// RaBitQ quantized centroid
-    #[allow(dead_code)]
-    pub rabitq_centroid: RaBitQVector,
     /// Full precision centroid (for reranking)
-    pub full_centroid: Vec<f32>,
+    pub centroid: Vec<f32>,
     /// Children node IDs (empty for leaf nodes)
     pub children: Vec<usize>,
     /// Vector indices (only for leaf nodes)
@@ -358,7 +355,7 @@ impl ClusteredIndexWithRaBitQ {
                     .par_iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = distance(query, &node.full_centroid, self.metric);
+                        let dist = distance(query, &node.centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()
@@ -367,7 +364,7 @@ impl ClusteredIndexWithRaBitQ {
                 // This computes 4 distances simultaneously, much faster than loop
                 let centroids: Vec<&[f32]> = current_nodes
                     .iter()
-                    .map(|&node_id| self.nodes[node_id].full_centroid.as_slice())
+                    .map(|&node_id| self.nodes[node_id].centroid.as_slice())
                     .collect();
                 
                 let distances = crate::distance::simd_neon::l2_squared_batch(query, &centroids);
@@ -383,7 +380,7 @@ impl ClusteredIndexWithRaBitQ {
                     .iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = distance(query, &node.full_centroid, self.metric);
+                        let dist = distance(query, &node.centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()
@@ -517,12 +514,10 @@ impl ClusteredIndexWithRaBitQ {
             .collect();
         
         let centroid = compute_centroid(&subset_vectors);
-        let rabitq_centroid = quantizer.quantize(&centroid);
         
         ClusterNodeWithRaBitQ {
             id: node_id,
-            rabitq_centroid,
-            full_centroid: centroid,
+            centroid,
             children: Vec::new(),
             vector_indices: indices,
         }
@@ -571,8 +566,7 @@ impl ClusteredIndexWithRaBitQ {
     ) -> ClusterNodeWithRaBitQ {
         ClusterNodeWithRaBitQ {
             id: node_id,
-            rabitq_centroid: rabitq_centroids[cluster_id].clone(),
-            full_centroid: full_centroids[cluster_id].clone(),
+            centroid: full_centroids[cluster_id].clone(),
             children,
             vector_indices: Vec::new(), // Internal nodes don't store vectors
         }
@@ -853,7 +847,7 @@ impl ClusteredIndexWithRaBitQ {
                     .par_iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = distance(query, &node.full_centroid, self.metric);
+                        let dist = distance(query, &node.centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()
@@ -862,7 +856,7 @@ impl ClusteredIndexWithRaBitQ {
                     .iter()
                     .map(|&node_id| {
                         let node = &self.nodes[node_id];
-                        let dist = distance(query, &node.full_centroid, self.metric);
+                        let dist = distance(query, &node.centroid, self.metric);
                         (node_id, dist)
                     })
                     .collect()

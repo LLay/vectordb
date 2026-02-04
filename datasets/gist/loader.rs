@@ -109,8 +109,6 @@ pub fn read_ivecs(path: &str) -> io::Result<Vec<Vec<usize>>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    
     #[test]
     fn test_load_gist_query() {
         let (vectors, dim) = read_fvecs("datasets/gist/data/gist/gist_query.fvecs")

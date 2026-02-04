@@ -12,6 +12,6 @@ pub mod visualization;
 
 // Re-export commonly used types
 pub use distance::{DistanceMetric, distance, batch_distances, batch_distances_parallel};
-pub use index::{ClusteredIndex, ClusteredIndexRaBitQ};
+pub use index::{ClusteredIndex, ClusteredIndexRaBitQ, ClusteredIndexWithRaBitQ};
 pub use clustering::{KMeans, ClusterAssignment};
 pub use quantization::{BinaryQuantizer, BinaryVector, RaBitQQuantizer, RaBitQVector};

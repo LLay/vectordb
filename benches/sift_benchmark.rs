@@ -175,9 +175,9 @@ fn benchmark_sift(c: &mut Criterion) {
     // Benchmark different configurations
     // Format: (name, probes, rerank_factor)
     let configs = vec![
-        ("low_latency", 2, 5),    // +150% more candidates reranked
-        ("balanced", 5, 10),       // +233% more candidates reranked
-        ("high_recall", 10, 20),   // +300% more candidates reranked
+        ("low_latency", 2, 5),
+        ("balanced", 5, 10), 
+        ("high_recall", 10, 20),
     ];
     
     let dataset_name = match dataset_size {

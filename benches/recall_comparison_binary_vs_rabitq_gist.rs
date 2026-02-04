@@ -18,7 +18,7 @@
 mod gist;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use vectordb::{ClusteredIndex, ClusteredIndexRaBitQ, DistanceMetric};
+use vectordb::{ClusteredIndex, ClusteredIndexWithRaBitQ, DistanceMetric};
 use std::collections::HashSet;
 use std::time::Duration;
 use std::env;
@@ -167,7 +167,7 @@ fn compare_indexes(c: &mut Criterion) {
     // Build RaBitQ index
     eprintln!("[2/2] Building RaBitQ index...");
     let rabitq_start = std::time::Instant::now();
-    let rabitq_index = ClusteredIndexRaBitQ::build(
+    let rabitq_index = ClusteredIndexWithRaBitQ::build(
         vectors.clone(),
         "gist_comparison_rabitq_1000000.bin",
         branching_factor,

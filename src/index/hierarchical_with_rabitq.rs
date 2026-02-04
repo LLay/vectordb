@@ -1,28 +1,28 @@
-//! Hierarchical clustered index with binary quantization
+//! Hierarchical clustered index with RaBitQ quantization
 //! 
 //! Uses multi-level clustering (tree structure) for fast search:
 //! - Level 0 (root): ~10 clusters
 //! - Level 1: ~10 sub-clusters per parent = ~100 total
 //! - Leaf level: Vectors grouped by final cluster
 //! 
-//! Binary quantization at each level for fast filtering + precise reranking.
+//! RaBitQ quantization at each level for fast filtering + precise reranking.
 
 use crate::clustering::KMeans;
 use crate::distance::{distance, DistanceMetric};
-use crate::quantization::{BinaryQuantizer, BinaryVector, hamming_distance};
+use crate::quantization::{RaBitQQuantizer, RaBitQVector};
 use crate::storage::MmapVectorStore;
 use std::path::Path;
 use std::time::Instant;
 
 /// A node in the hierarchical tree
 #[derive(Debug, Clone)]
-pub struct ClusterNode {
+pub struct ClusterNodeWithRaBitQ {
     /// Node ID
     #[allow(dead_code)]
     pub id: usize,
-    /// Binary quantized centroid
+    /// RaBitQ quantized centroid
     #[allow(dead_code)]
-    pub binary_centroid: BinaryVector,
+    pub rabitq_centroid: RaBitQVector,
     /// Full precision centroid (for reranking)
     pub full_centroid: Vec<f32>,
     /// Children node IDs (empty for leaf nodes)
@@ -33,30 +33,30 @@ pub struct ClusterNode {
 
 /// Search statistics for observability
 #[derive(Debug, Clone)]
-pub struct SearchStats {
+pub struct SearchStatsWithRaBitQ {
     pub total_leaves: usize,
     pub leaves_searched: usize,
     pub leaves_searched_ids: Vec<usize>,  // IDs of leaves that were searched
     pub total_vectors: usize,
-    pub vectors_scanned_binary: usize,
+    pub vectors_scanned_rabitq: usize,
     pub vectors_reranked_full: usize,
     pub tree_depth: usize,
     pub probes_per_level: Vec<usize>,
 }
 
-/// Hierarchical clustered index with binary quantization
+/// Hierarchical clustered index with RaBitQ quantization
 /// 
 /// Uses memory-mapped storage for full precision vectors to minimize RAM usage.
 /// Hot vectors are automatically cached by the OS.
-pub struct ClusteredIndex {
+pub struct ClusteredIndexWithRaBitQ {
     /// All nodes in the tree (indexed by node ID)
-    pub nodes: Vec<ClusterNode>,
+    pub nodes: Vec<ClusterNodeWithRaBitQ>,
     /// Root node IDs (level 0)
     pub root_ids: Vec<usize>,
-    /// Binary quantizer
-    pub quantizer: BinaryQuantizer,
-    /// Pre-quantized binary vectors (for fast candidate scanning)
-    pub binary_vectors: Vec<BinaryVector>,
+    /// RaBitQ quantizer
+    pub quantizer: RaBitQQuantizer,
+    /// Pre-quantized RaBitQ vectors (for fast candidate scanning)
+    pub rabitq_vectors: Vec<RaBitQVector>,
     /// Full precision vectors (memory-mapped for RAM efficiency)
     pub full_vectors: MmapVectorStore,
     /// Distance metric
@@ -69,7 +69,7 @@ pub struct ClusteredIndex {
     max_leaf_size: usize,
 }
 
-impl ClusteredIndex {
+impl ClusteredIndexWithRaBitQ {
     /// Build a hierarchical clustered index with adaptive splitting
     /// 
     /// Vectors are stored in a memory-mapped file for RAM efficiency.
@@ -99,16 +99,18 @@ impl ClusteredIndex {
         let dimension = vectors[0].len();
         let num_vectors = vectors.len();
 
-        println!("Building adaptive hierarchical index...");
+        println!("Building adaptive hierarchical index with RaBitQ...");
         println!("  Vectors: {}", num_vectors);
         println!("  Branching factor: {}", branching_factor);
         println!("  Target leaf size: {}", target_leaf_size);
 
-        // Create binary quantizer
-        let quantizer = BinaryQuantizer::from_vectors(&vectors);
+        // Create RaBitQ quantizer
+        eprintln!("[RaBitQ Index] Creating quantizer for D={}...", dimension);
+        let quantizer = RaBitQQuantizer::new(dimension);
 
         // Pre-quantize all vectors for fast candidate scanning
-        let binary_vectors = quantizer.quantize_batch_parallel(&vectors);
+        eprintln!("[RaBitQ Index] Quantizing {} vectors...", num_vectors);
+        let rabitq_vectors = quantizer.quantize_batch(&vectors);
 
         // Write vectors to disk and create memory-mapped store
         let full_vectors = MmapVectorStore::create(&vector_file, &vectors)?;
@@ -164,7 +166,7 @@ impl ClusteredIndex {
             nodes,
             root_ids,
             quantizer,
-            binary_vectors,
+            rabitq_vectors,
             full_vectors,
             metric,
             dimension,
@@ -187,7 +189,7 @@ impl ClusteredIndex {
     #[allow(clippy::too_many_arguments)]
     fn build_recursive(
         all_vectors: &[Vec<f32>],
-        quantizer: &BinaryQuantizer,
+        quantizer: &RaBitQQuantizer,
         indices: Vec<usize>,
         current_depth: usize,
         max_depth_reached: &mut usize,
@@ -195,7 +197,7 @@ impl ClusteredIndex {
         branching_factor: usize,
         metric: DistanceMetric,
         max_iterations: usize,
-        nodes: &mut Vec<ClusterNode>,
+        nodes: &mut Vec<ClusterNodeWithRaBitQ>,
         next_node_id: &mut usize,
     ) -> Vec<usize> {
         // Track maximum depth reached
@@ -233,7 +235,7 @@ impl ClusteredIndex {
         );
 
         // Quantize centroids for fast search
-        let binary_centroids = quantizer.quantize_batch(&kmeans.centroids);
+        let rabitq_centroids = quantizer.quantize_batch(&kmeans.centroids);
 
         // Build child nodes for each cluster
         let mut node_ids = Vec::new();
@@ -307,7 +309,7 @@ impl ClusteredIndex {
                 let node = Self::create_internal_from_cluster(
                     node_id,
                     _cluster_id,
-                    &binary_centroids,
+                    &rabitq_centroids,
                     &kmeans.centroids,
                     children,
                 );
@@ -326,7 +328,7 @@ impl ClusteredIndex {
     /// * `query` - Query vector
     /// * `k` - Number of neighbors to return
     /// * `probes_per_level` - Number of clusters to explore at each level
-    /// * `rerank_factor` - How many binary candidates to rerank
+    /// * `rerank_factor` - How many RaBitQ candidates to rerank
     pub fn search(
         &self,
         query: &[f32],
@@ -335,9 +337,6 @@ impl ClusteredIndex {
         rerank_factor: usize,
     ) -> Vec<(usize, f32)> {
         assert_eq!(query.len(), self.dimension, "Query dimension mismatch");
-
-        // Quantize query for leaf-level filtering
-        let query_binary = self.quantizer.quantize(query);
 
         // Accumulate all leaves we encounter during traversal
         let mut accumulated_leaves = Vec::new();
@@ -426,13 +425,13 @@ impl ClusteredIndex {
         if accumulated_leaves.is_empty() {
             Vec::new()
         } else {
-            self.search_leaves(&accumulated_leaves, query, &query_binary, k, rerank_factor)
+            self.search_leaves(&accumulated_leaves, query, k, rerank_factor)
         }
     }
 
     /// Search within leaf nodes - two-phase algorithm
     /// 
-    /// Phase 1: Fast filtering with binary quantization (Hamming distance)
+    /// Phase 1: Fast filtering with RaBitQ quantization (estimated distance)
     /// Phase 2: Precise reranking with full vectors (Euclidean/Cosine distance)
     /// 
     /// This two-phase approach is ~10-20x faster than brute force full-precision search
@@ -440,21 +439,20 @@ impl ClusteredIndex {
         &self,
         leaf_ids: &[usize],
         query: &[f32],
-        query_binary: &BinaryVector,
         k: usize,
         rerank_factor: usize,
     ) -> Vec<(usize, f32)> {
         let rerank_k = (k * rerank_factor).min(10000);
 
-        // Phase 1: Fast binary filtering (Hamming distance on 32x compressed vectors)
-        let binary_candidates = self.collect_leaf_candidates(leaf_ids, query_binary);
+        // Phase 1: Fast RaBitQ filtering (estimated distance on quantized vectors)
+        let rabitq_candidates = self.collect_leaf_candidates(leaf_ids, query);
         
-        if binary_candidates.is_empty() {
+        if rabitq_candidates.is_empty() {
             return Vec::new();
         }
 
         // Select top candidates for reranking (e.g., top 3*k if rerank_factor=3)
-        let top_candidates = self.select_top_candidates(binary_candidates, rerank_k);
+        let top_candidates = self.select_top_candidates(rabitq_candidates, rerank_k);
 
         // Phase 2: Precise reranking (full precision distance on filtered candidates)
         let reranked = self.rerank_with_full_precision(&top_candidates, query);
@@ -485,11 +483,11 @@ impl ClusteredIndex {
         let mut total = 0;
         
         // Nodes (rough estimate)
-        total += std::mem::size_of::<ClusterNode>() * self.nodes.len();
+        total += std::mem::size_of::<ClusterNodeWithRaBitQ>() * self.nodes.len();
         
-        // Binary vectors (stored in RAM)
-        total += self.binary_vectors.iter()
-            .map(|bv| bv.bits.len() * 8)
+        // RaBitQ vectors (stored in RAM)
+        total += self.rabitq_vectors.iter()
+            .map(|rv| rv.code.len() * 8 + 4 + 4) // code bits + norm (f32) + inner_product_oo (f32)
             .sum::<usize>();
         
         // Note: full_vectors are mmap'd, so not counted in RAM usage
@@ -509,9 +507,9 @@ impl ClusteredIndex {
     fn create_leaf_from_indices(
         indices: Vec<usize>,
         all_vectors: &[Vec<f32>],
-        quantizer: &BinaryQuantizer,
+        quantizer: &RaBitQQuantizer,
         node_id: usize,
-    ) -> ClusterNode {
+    ) -> ClusterNodeWithRaBitQ {
         // Compute centroid from the vectors in this leaf
         let subset_vectors: Vec<Vec<f32>> = indices
             .iter()
@@ -519,11 +517,11 @@ impl ClusteredIndex {
             .collect();
         
         let centroid = compute_centroid(&subset_vectors);
-        let binary_centroid = quantizer.quantize(&centroid);
+        let rabitq_centroid = quantizer.quantize(&centroid);
         
-        ClusterNode {
+        ClusterNodeWithRaBitQ {
             id: node_id,
-            binary_centroid,
+            rabitq_centroid,
             full_centroid: centroid,
             children: Vec::new(),
             vector_indices: indices,
@@ -567,88 +565,74 @@ impl ClusteredIndex {
     fn create_internal_from_cluster(
         node_id: usize,
         cluster_id: usize,
-        binary_centroids: &[BinaryVector],
+        rabitq_centroids: &[RaBitQVector],
         full_centroids: &[Vec<f32>],
         children: Vec<usize>,
-    ) -> ClusterNode {
-        ClusterNode {
+    ) -> ClusterNodeWithRaBitQ {
+        ClusterNodeWithRaBitQ {
             id: node_id,
-            binary_centroid: binary_centroids[cluster_id].clone(),
+            rabitq_centroid: rabitq_centroids[cluster_id].clone(),
             full_centroid: full_centroids[cluster_id].clone(),
             children,
             vector_indices: Vec::new(), // Internal nodes don't store vectors
         }
     }
 
-    /// Compute Hamming distances for a set of vector indices (adaptive parallelization)
+    /// Compute RaBitQ estimated distances for a set of vector indices (batch optimized)
     /// 
-    /// Returns Vec<(vector_idx, hamming_distance)> pairs.
+    /// Returns Vec<(vector_idx, estimated_distance)> pairs.
     /// 
-    /// Adaptive strategy:
-    /// - >100 vectors: Parallel (overhead is worth it)
-    /// - ≤100 vectors: Sequential (avoid rayon overhead ~10-50μs)
+    /// Uses batch estimation for efficiency (pre-rotates query once)
     #[inline]
-    fn compute_hamming_distances(
+    fn compute_rabitq_distances(
         &self,
         vector_indices: &[usize],
-        query_binary: &BinaryVector,
-    ) -> Vec<(usize, u32)> {
-        use rayon::prelude::*;
+        query: &[f32],
+    ) -> Vec<(usize, f32)> {
+        // Collect RaBitQ vectors for batch estimation
+        let rabitq_refs: Vec<&RaBitQVector> = vector_indices
+            .iter()
+            .map(|&idx| &self.rabitq_vectors[idx])
+            .collect();
         
-        if vector_indices.len() > 100 {
-            // Parallel: Process vectors across multiple cores
-            // Each thread computes Hamming distance independently
-            // Rayon's work-stealing balances the load automatically
-            vector_indices
-                .par_iter()
-                .map(|&idx| (idx, hamming_distance(query_binary, &self.binary_vectors[idx])))
-                .collect()
-        } else {
-            // Sequential: Faster for small workloads
-            // Avoids parallel overhead (thread spawning, synchronization)
-            vector_indices
-                .iter()
-                .map(|&idx| (idx, hamming_distance(query_binary, &self.binary_vectors[idx])))
-                .collect()
-        }
+        // Batch estimate distances (internally pre-rotates query once)
+        let distances = self.quantizer.estimate_distances_batch_fast(&rabitq_refs, query);
+        
+        // Zip indices with distances
+        vector_indices
+            .iter()
+            .zip(distances.iter())
+            .map(|(&idx, &dist)| (idx, dist))
+            .collect()
     }
 
-    /// Collect candidates from multiple leaves (adaptive parallelization)
+    /// Collect candidates from multiple leaves (optimized batch processing)
     #[inline]
     fn collect_leaf_candidates(
         &self,
         leaf_ids: &[usize],
-        query_binary: &BinaryVector,
-    ) -> Vec<(usize, u32)> {
-        use rayon::prelude::*;
-        
-        if leaf_ids.len() > 1 {
-            // Multiple leaves - parallelize across leaves
-            leaf_ids
-                .par_iter()
-                .flat_map(|&leaf_id| {
-                    let leaf = &self.nodes[leaf_id];
-                    self.compute_hamming_distances(&leaf.vector_indices, query_binary)
-                })
-                .collect()
-        } else if let Some(&leaf_id) = leaf_ids.first() {
-            // Single leaf - adaptive parallelization within
+        query: &[f32],
+    ) -> Vec<(usize, f32)> {
+        // Collect all vector indices from all leaves
+        let mut all_indices = Vec::new();
+        for &leaf_id in leaf_ids {
             let leaf = &self.nodes[leaf_id];
-            self.compute_hamming_distances(&leaf.vector_indices, query_binary)
-        } else {
-            Vec::new()
+            all_indices.extend(&leaf.vector_indices);
         }
+        
+        // Compute RaBitQ distances in one batch (more efficient)
+        self.compute_rabitq_distances(&all_indices, query)
     }
 
     /// Select top-k candidates by distance (partial sort for efficiency)
     #[inline]
-    fn select_top_candidates(&self, mut candidates: Vec<(usize, u32)>, k: usize) -> Vec<(usize, u32)> {
+    fn select_top_candidates(&self, mut candidates: Vec<(usize, f32)>, k: usize) -> Vec<(usize, f32)> {
         if candidates.len() <= k {
-            candidates.sort_by_key(|x| x.1);
+            candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
             candidates
         } else {
             // Partial sort: only sort enough to get top-k (faster than full sort)
-            candidates.select_nth_unstable_by(k - 1, |a, b| a.1.cmp(&b.1));
+            candidates.select_nth_unstable_by(k - 1, |a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
             candidates.truncate(k);
             candidates
         }
@@ -658,7 +642,7 @@ impl ClusteredIndex {
     #[inline]
     fn rerank_with_full_precision(
         &self,
-        candidates: &[(usize, u32)],
+        candidates: &[(usize, f32)],
         query: &[f32],
     ) -> Vec<(usize, f32)> {
         use rayon::prelude::*;
@@ -834,19 +818,18 @@ impl ClusteredIndex {
         k: usize,
         probes: usize,
         rerank_factor: usize,
-    ) -> (Vec<(usize, f32)>, SearchStats) {
+    ) -> (Vec<(usize, f32)>, SearchStatsWithRaBitQ) {
         assert_eq!(query.len(), self.dimension);
         
         let total_leaves = self.count_leaves();
-        let query_binary = self.quantizer.quantize(query);
         
         // Track statistics
-        let mut stats = SearchStats {
+        let mut stats = SearchStatsWithRaBitQ {
             total_leaves,
             leaves_searched: 0,
             leaves_searched_ids: Vec::new(),
-            total_vectors: self.binary_vectors.len(),
-            vectors_scanned_binary: 0,
+            total_vectors: self.rabitq_vectors.len(),
+            vectors_scanned_rabitq: 0,
             vectors_reranked_full: 0,
             tree_depth: self.max_depth,
             probes_per_level: Vec::new(),
@@ -918,17 +901,17 @@ impl ClusteredIndex {
         
         // Count vectors in leaves
         for &leaf_id in &accumulated_leaves {
-            stats.vectors_scanned_binary += self.nodes[leaf_id].vector_indices.len();
+            stats.vectors_scanned_rabitq += self.nodes[leaf_id].vector_indices.len();
         }
         
         // Search leaves and track reranking
-        let candidates_with_dist = self.collect_leaf_candidates(&accumulated_leaves, &query_binary);
+        let candidates_with_dist = self.collect_leaf_candidates(&accumulated_leaves, query);
         
         let rerank_count = (k * rerank_factor).min(candidates_with_dist.len());
         stats.vectors_reranked_full = rerank_count;
         
         let mut top_candidates = candidates_with_dist;
-        top_candidates.sort_by_key(|x| x.1);
+        top_candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         top_candidates.truncate(rerank_count);
         
         let reranked = self.rerank_with_full_precision(&top_candidates, query);
@@ -938,7 +921,7 @@ impl ClusteredIndex {
     }
     
     /// Print search statistics
-    pub fn print_search_stats(&self, stats: &SearchStats, probes: usize) {
+    pub fn print_search_stats(&self, stats: &SearchStatsWithRaBitQ, probes: usize) {
         println!("\n=== Search Statistics ===");
         println!("Tree traversal:");
         println!("  Depth: {}", stats.tree_depth);
@@ -955,9 +938,9 @@ impl ClusteredIndex {
         
         println!("\nVector processing:");
         println!("  Total vectors: {}", stats.total_vectors);
-        println!("  Binary scanned: {} ({:.2}%)", 
-                 stats.vectors_scanned_binary,
-                 stats.vectors_scanned_binary as f64 / stats.total_vectors as f64 * 100.0);
+        println!("  RaBitQ scanned: {} ({:.2}%)", 
+                 stats.vectors_scanned_rabitq,
+                 stats.vectors_scanned_rabitq as f64 / stats.total_vectors as f64 * 100.0);
         println!("  Full precision reranked: {} ({:.2}%)", 
                  stats.vectors_reranked_full,
                  stats.vectors_reranked_full as f64 / stats.total_vectors as f64 * 100.0);
@@ -1003,8 +986,8 @@ mod tests {
             vectors.push(vec![i as f32, 0.0, 0.0]);
         }
 
-        let test_file = "test_hier_build.bin";
-        let index = ClusteredIndex::build(vectors, test_file, 5, 50, DistanceMetric::L2, 10).unwrap();
+        let test_file = "test_hier_rabitq_build.bin";
+        let index = ClusteredIndexWithRaBitQ::build(vectors, test_file, 5, 50, DistanceMetric::L2, 10).unwrap();
 
         assert_eq!(index.len(), 100);
         assert!(index.max_depth() >= 1);
@@ -1028,8 +1011,8 @@ mod tests {
             vectors.push(vec![10.0 + i as f32 * 0.01, 10.0]);
         }
 
-        let test_file = "test_hier_search.bin";
-        let index = ClusteredIndex::build(vectors, test_file, 5, 30, DistanceMetric::L2, 10).unwrap();
+        let test_file = "test_hier_rabitq_search.bin";
+        let index = ClusteredIndexWithRaBitQ::build(vectors, test_file, 5, 30, DistanceMetric::L2, 10).unwrap();
 
         // Query near first cluster
         let query = vec![0.25, 0.0];
@@ -1061,8 +1044,8 @@ mod tests {
         }
 
         let max_leaf_size = 100;
-        let test_file = "test_adaptive_old.bin";
-        let index = ClusteredIndex::build(
+        let test_file = "test_adaptive_rabitq.bin";
+        let index = ClusteredIndexWithRaBitQ::build(
             vectors,
             test_file,
             5, 
@@ -1095,8 +1078,8 @@ mod tests {
             .collect();
 
         for branching in [3, 5, 10] {
-            let test_file = format!("test_branch_{}_vectors.bin", branching);
-            let index = ClusteredIndex::build(vectors.clone(), &test_file, branching, 50, DistanceMetric::L2, 10).unwrap();
+            let test_file = format!("test_branch_rabitq_{}_vectors.bin", branching);
+            let index = ClusteredIndexWithRaBitQ::build(vectors.clone(), &test_file, branching, 50, DistanceMetric::L2, 10).unwrap();
             
             assert_eq!(index.len(), 200);
             
@@ -1118,10 +1101,10 @@ mod tests {
                 (0..128).map(|j| (i * 128 + j) as f32).collect()
             })
             .collect();
-        let test_file = "test_mmap_vectors.bin";
+        let test_file = "test_mmap_rabitq_vectors.bin";
         
         // Build index (now uses mmap by default)
-        let index = ClusteredIndex::build(
+        let index = ClusteredIndexWithRaBitQ::build(
             vectors.clone(),
             test_file,
             10,

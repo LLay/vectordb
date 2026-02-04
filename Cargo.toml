@@ -89,11 +89,11 @@ name = "rabitq_bench"
 harness = false
 
 [[bench]]
-name = "sift_comparison"
+name = "recall_comparison_binary_vs_rabitq_sift"
 harness = false
 
 [[bench]]
-name = "gist_comparison"
+name = "recall_comparison_binary_vs_rabitq_gist"
 harness = false
 
 [[bin]]

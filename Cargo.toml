@@ -84,6 +84,14 @@ harness = false
 name = "sift_microbench"
 harness = false
 
+[[bench]]
+name = "rabitq_bench"
+harness = false
+
+[[bench]]
+name = "sift_comparison"
+harness = false
+
 [[bin]]
 name = "create_sift_subset"
 path = "datasets/sift/create_subset.rs"

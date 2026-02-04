@@ -3,9 +3,7 @@
 //! Provides hierarchical clustered index with binary and RaBitQ quantization.
 
 pub mod hierarchical;
-pub mod hierarchical_rabitq;
 pub mod hierarchical_with_rabitq;
 
 pub use hierarchical::ClusteredIndex;
-pub use hierarchical_rabitq::ClusteredIndexRaBitQ;
 pub use hierarchical_with_rabitq::ClusteredIndexWithRaBitQ;

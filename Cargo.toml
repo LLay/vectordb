@@ -96,6 +96,10 @@ harness = false
 name = "recall_comparison_binary_vs_rabitq_gist"
 harness = false
 
+[[bench]]
+name = "recall_diagnostic"
+harness = false
+
 [[bin]]
 name = "create_sift_subset"
 path = "datasets/sift/create_subset.rs"

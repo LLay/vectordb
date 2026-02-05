@@ -174,10 +174,12 @@ fn benchmark_gist(c: &mut Criterion) {
     
     // Benchmark different configurations
     // Format: (name, probes, rerank_factor)
-    let configs = vec![
-        ("low_latency", 50, 25),
-        ("balanced", 85, 75),
-        ("high_recall", 100, 150),
+    let configs: Vec<(&str, usize, usize)> = vec![
+        ("low_latency", 200, 5),
+        ("medium_low_latency", 200, 10),
+        ("balanced", 200, 25),
+        ("medium_high_recall", 200, 50),
+        ("high_recall", 200, 100),
     ];
     
     let dataset_name = match dataset_size {

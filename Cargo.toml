@@ -3,7 +3,13 @@ name = "vectordb"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "vectordb"
+crate-type = ["rlib", "cdylib"]  # cdylib for Python bindings
+
 [dependencies]
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 # Linear algebra
 ndarray = { version = "0.16", features = ["rayon"] }
 ndarray-rand = "0.15"
@@ -36,6 +42,10 @@ tracing-subscriber = "0.3"
 
 [dev-dependencies]
 proptest = "1.4"  # Property-based testing
+
+[features]
+default = []
+python = ["pyo3"]
 
 [profile.release]
 opt-level = 3

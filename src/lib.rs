@@ -10,6 +10,10 @@ pub mod quantization;
 pub mod storage;
 pub mod visualization;
 
+// Python bindings (only compiled with python feature)
+#[cfg(feature = "python")]
+pub mod python_bindings;
+
 // Re-export commonly used types
 pub use distance::{DistanceMetric, distance, batch_distances, batch_distances_parallel};
 pub use index::{ClusteredIndex, ClusteredIndexWithRaBitQ};
